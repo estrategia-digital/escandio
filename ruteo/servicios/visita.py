@@ -508,15 +508,19 @@ class VisitaServicio():
                 # desde complemento" (despacho_id seteado) se traen TODAS las guias
                 # del despacho para que quede COMPLETO: se AGREGAN al despacho (no
                 # se mueven ni se omiten), como estaba antes.
-                # Para el pool: se salta solo si ya existe una copia ABIERTA (no
-                # entregada) con ese numero. El codigoGuiaPk es unico en Semantica;
-                # una guia ya ENTREGADA en un ciclo previo no debe bloquear un
-                # re-pull legitimo (reapertura / re-entrega).
+                # Para el pool: se salta si YA EXISTE una RutVisita con ese numero,
+                # ENTREGADA O NO. El codigoGuiaPk es unico por guia en Semantica, asi
+                # que "existe" = es la misma guia -> NO se duplica.
+                # (Antes solo se saltaba la copia ABIERTA: una guia ya entregada
+                # generaba un DUPLICADO al re-importar -> la oficina lo borraba y
+                # podia orfanar la evidencia offline del conductor, "la visita no
+                # existe" al sincronizar. Era la causa raiz de los duplicados.)
+                # NOTA: re-entregar una guia ya cerrada debe ser un flujo EXPLICITO,
+                # no un duplicado automatico del import. Si una guia se BORRO de
+                # verdad, no hay copia -> el re-import la vuelve a crear (correcto).
                 numero_guia = guia.get('codigoGuiaPk')
                 if despacho_id is None and numero_guia is not None and RutVisita.objects.filter(
                     numero=numero_guia,
-                    estado_entregado=False,
-                    estado_entregado_complemento=False,
                 ).exists():
                     duplicadas += 1
                     continue
