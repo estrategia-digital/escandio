@@ -415,6 +415,62 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedNovedadTipoMovilList'
           description: ''
+  /api/v2/seguimiento/{id}/responder/:
+    post:
+      operationId: seguimiento_responder_create
+      description: Consultas de seguimiento dirigidas al conductor.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este rut seguimiento.
+        required: true
+      tags:
+      - seguimiento
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponderConsultaRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResponderConsultaRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResponderConsultaRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Id'
+          description: ''
+  /api/v2/seguimiento/pendientes/:
+    get:
+      operationId: seguimiento_pendientes_list
+      description: Consultas pendientes de los despachos que conduce este usuario.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      tags:
+      - seguimiento
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedConsultaPendienteMovilList'
+          description: ''
   /api/v2/ubicacion/:
     post:
       operationId: ubicacion_create
@@ -663,6 +719,32 @@ components:
       - actualizacion_requerida
       - version_actual
       - version_minima
+    ConsultaPendienteMovil:
+      type: object
+      description: Consulta '¿como va el viaje?' que el conductor tiene por responder.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        despacho_id:
+          type: integer
+          nullable: true
+          readOnly: true
+        pregunta:
+          type: string
+        opciones:
+          readOnly: true
+          nullable: true
+        fecha_registro:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - despacho_id
+      - fecha_registro
+      - id
+      - opciones
+      - pregunta
     CrearNovedadRequestRequest:
       type: object
       description: Documenta el cuerpo multipart de POST /novedades/.
@@ -856,6 +938,29 @@ components:
       required:
       - id
       - nombre
+    PaginatedConsultaPendienteMovilList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsultaPendienteMovil'
     PaginatedNovedadTipoMovilList:
       type: object
       required:
@@ -914,6 +1019,29 @@ components:
       required:
       - password
       - username
+    ResponderConsultaRequestRequest:
+      type: object
+      description: Documenta el cuerpo de POST /seguimiento/<id>/responder/.
+      properties:
+        opcion:
+          type: string
+          minLength: 1
+          description: Opcion elegida de las ofrecidas.
+        comentario:
+          type: string
+          nullable: true
+        movil_token:
+          type: string
+          minLength: 1
+          description: Clave de idempotencia generada por la app.
+        fecha:
+          type: string
+          minLength: 1
+          description: 'Formato: YYYY-MM-DD HH:MM'
+      required:
+      - fecha
+      - movil_token
+      - opcion
     Sesion:
       type: object
       description: 'Respuesta de login: tokens estandar + usuario.'

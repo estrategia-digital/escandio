@@ -46,5 +46,49 @@ class RutSeguimientoViewSet(RolMixin, viewsets.ModelViewSet):
             if request.query_params.get('lista_completa', '').lower() == 'true':
                 self.pagination_class = None
             return super().list(request, *args, **kwargs)
-    
-    
+
+    def perform_create(self, serializer):
+        # El autor del evento web (llamada/nota) es el despachador autenticado.
+        # usuario_id no es FK (patron cross-schema); guardamos el id plano.
+        serializer.save(usuario_id=getattr(self.request.user, 'id', None))
+
+    @action(detail=False, methods=['post'])
+    def consultar(self, request):
+        """Trigger MANUAL desde Trafico: crea una consulta '¿como va el viaje?'
+        pendiente para que el conductor la responda en la app.
+
+        Body: {despacho_id, opciones?, pregunta?}. Rechaza si ese despacho ya
+        tiene una consulta pendiente (evita spamear al conductor).
+        """
+        despacho_id = request.data.get('despacho_id')
+        if not despacho_id:
+            return Response(
+                {'detail': 'despacho_id es obligatorio.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ya_pendiente = RutSeguimiento.objects.filter(
+            despacho_id=despacho_id,
+            tipo=RutSeguimiento.TIPO_CONSULTA,
+            estado=RutSeguimiento.ESTADO_PENDIENTE,
+        ).exists()
+        if ya_pendiente:
+            return Response(
+                {'detail': 'Ya hay una consulta pendiente para este viaje.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        opciones = request.data.get('opciones') or [
+            'Todo bien', 'Voy retrasado', 'Tengo un problema',
+        ]
+        consulta = RutSeguimiento.objects.create(
+            despacho_id=despacho_id,
+            tipo=RutSeguimiento.TIPO_CONSULTA,
+            estado=RutSeguimiento.ESTADO_PENDIENTE,
+            origen=RutSeguimiento.ORIGEN_MANUAL,
+            opciones=opciones,
+            comentario=request.data.get('pregunta') or '¿Cómo va el viaje?',
+            usuario_id=getattr(request.user, 'id', None),
+        )
+        serializer = self.get_serializer(consulta)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

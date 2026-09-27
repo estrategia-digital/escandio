@@ -23,12 +23,14 @@ from movil.views.despacho import (
     TomarDespachoView,
 )
 from movil.views.novedad import NovedadMovilViewSet
+from movil.views.seguimiento import SeguimientoMovilViewSet
 from movil.views.ubicacion import UbicacionMovilView
 from movil.views.visita import VisitaMovilViewSet
 
 router = SimpleRouter()
 router.register('visitas', VisitaMovilViewSet, basename='movil-visita')
 router.register('novedades', NovedadMovilViewSet, basename='movil-novedad')
+router.register('seguimiento', SeguimientoMovilViewSet, basename='movil-seguimiento')
 
 urlpatterns = [
     path('app/config/', AppConfigView.as_view(), name='movil-app-config'),
