@@ -35,23 +35,33 @@ class _ConductorNombreMixin:
     serializer nuevo por request), seguro en multitenant.
     """
 
-    def _nombre_conductor(self, conductor_id):
+    def _datos_conductor(self, conductor_id):
+        """Devuelve {nombre, telefono} del conductor, cacheado por user id."""
         if not conductor_id:
-            return None
+            return {'nombre': None, 'telefono': None}
         cache = self.__dict__.setdefault('_cache_conductores', {})
         if conductor_id not in cache:
             from contenedor.models import User
             usuario = (
                 User.objects.filter(pk=conductor_id)
-                .only('nombre', 'apellido')
+                .only('nombre', 'apellido', 'telefono')
                 .first()
             )
-            cache[conductor_id] = (
-                f'{usuario.nombre or ""} {usuario.apellido or ""}'.strip() or None
-                if usuario
-                else None
-            )
+            if usuario:
+                nombre = (
+                    f'{usuario.nombre or ""} {usuario.apellido or ""}'.strip()
+                    or None
+                )
+                cache[conductor_id] = {'nombre': nombre, 'telefono': usuario.telefono}
+            else:
+                cache[conductor_id] = {'nombre': None, 'telefono': None}
         return cache[conductor_id]
+
+    def _nombre_conductor(self, conductor_id):
+        return self._datos_conductor(conductor_id)['nombre']
+
+    def _telefono_conductor(self, conductor_id):
+        return self._datos_conductor(conductor_id)['telefono']
 
 
 class RutDespachoSerializador(_ConductorNombreMixin, serializers.ModelSerializer):
@@ -87,12 +97,20 @@ class RutDespachoTraficoSerializador(_ConductorNombreMixin, serializers.ModelSer
                   'vehiculo',
                   'vehiculo__placa',
                   'conductor_id',
+                  'conductor_telefono',
                   'cargado_por_id', 'cargado_en']
         select_related_fields = ['vehiculo']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['conductor_nombre'] = self._nombre_conductor(instance.conductor_id)
+        # Telefono para el boton "Llamar" de Trafico: el numero WhatsApp-autorizado
+        # (conductor_telefono) si esta seteado; si no, el telefono registrado del
+        # conductor asignado. Sobrescribe el campo crudo con ese fallback.
+        data['conductor_telefono'] = (
+            instance.conductor_telefono
+            or self._telefono_conductor(instance.conductor_id)
+        )
         # Analitica "cargar por OE (self-service)": quien tomo la orden desde la
         # app. Reusa el mismo cache de nombres (cachea por user id, no solo
         # conductor). conductor_nombre = quien la tiene/entrega hoy.

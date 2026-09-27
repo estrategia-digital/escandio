@@ -34,6 +34,8 @@ Endpoints — ver paths y shapes exactos en openapi_v2.yaml:
     GET  /api/v2/novedades/tipos/        -> lista
     POST /api/v2/novedades/              -> 201 {id}        (multipart)
     POST /api/v2/novedades/<id>/solucionar/ -> 200 {mensaje}
+    GET  /api/v2/seguimiento/pendientes/ -> lista de consultas '¿como va el viaje?'
+    POST /api/v2/seguimiento/<id>/responder/ -> 201 {id}  (offline-safe, idempotente)
     POST /api/v2/ubicacion/              -> 201 {ubicacion}
 
 REGLAS DEL CONTRATO v2:
@@ -70,5 +72,7 @@ ENDPOINTS_MOVIL_V2 = (
     'GET /api/v2/novedades/tipos/',
     'POST /api/v2/novedades/',
     'POST /api/v2/novedades/<id>/solucionar/',
+    'GET /api/v2/seguimiento/pendientes/',
+    'POST /api/v2/seguimiento/<id>/responder/',
     'POST /api/v2/ubicacion/',
 )
