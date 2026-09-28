@@ -113,6 +113,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     # los roles de tráfico puedan imprimir desde su módulo.
     acciones_lectura = [
         'imprimir_rotulo',
+        'sin_despachar',
     ]
     serializadores = {
         'lista': RutVistaListaSerializador,
@@ -585,6 +586,52 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             return Response({'mensaje': mensaje, 'debug': respuesta.get('debug')}, status=status.HTTP_200_OK)
         return Response({'mensaje':'visitas ordenadas'}, status=status.HTTP_200_OK)
         
+    @action(detail=False, methods=["get"], url_path=r'sin-despachar')
+    def sin_despachar(self, request):
+        """Alerta: guías en el pool, LISTAS para rutear pero SIN despachar.
+
+        Causa del "faltan entregas": una guía que se importa DESPUÉS de correr
+        rutear (o de que la ruta ya salió) queda decodificada y lista, pero sin
+        asignar a ningún despacho y sin ninguna alerta → el conductor nunca la
+        ve. Este endpoint las saca a la luz para que el office las rutee.
+
+        `nunca asignada` (despacho_anterior_id null) distingue el leak del import
+        de una guía que se soltó/anuló a propósito. Read-only.
+        """
+        from collections import defaultdict
+        base = RutVisita.objects.filter(
+            despacho__isnull=True,
+            despacho_anterior_id__isnull=True,
+            estado_despacho=False,
+            estado_devolucion=False,
+            estado_novedad=False,
+        )
+        listas = base.filter(
+            estado_decodificado=True, peso__isnull=False, tiempo__isnull=False,
+        )
+        sin_decodificar = base.filter(estado_decodificado=False).count()
+
+        por_dia = defaultdict(int)
+        guias = []
+        for v in listas.only(
+            'numero', 'destinatario', 'destinatario_direccion', 'fecha',
+        ).order_by('fecha'):
+            dia = timezone.localtime(v.fecha).date().isoformat() if v.fecha else None
+            por_dia[dia] += 1
+            if len(guias) < 100:
+                guias.append({
+                    'numero': v.numero,
+                    'destinatario': v.destinatario,
+                    'direccion': v.destinatario_direccion,
+                    'fecha': timezone.localtime(v.fecha).isoformat() if v.fecha else None,
+                })
+        return Response({
+            'listas': listas.count(),
+            'sin_decodificar': sin_decodificar,
+            'por_dia': dict(sorted(por_dia.items())),
+            'guias': guias,
+        })
+
     @action(detail=False, methods=["post"], url_path=r'rutear')
     def rutear(self, request):
         raw = request.data
