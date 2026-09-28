@@ -58,13 +58,13 @@ class ReporteMensajeroView(APIView):
             # guía con novedad ya entregada se contaba en ambas -> asignadas !=
             # entregadas + novedades + pendientes y se sobre-reportaban novedades.
             _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True, visitas_despacho_rel__estado_entregado=False)),
-            # Recogidas: SUBCONJUNTO de las entregadas cuyo destinatario dice
-            # "RECOGIDA" (una recogida se marca entregada). Se muestra aparte para
-            # que al liquidar no se cuente una recogida como una entrega. Es la
-            # ÚNICA señal disponible (no hay campo tipo), así que es aproximada.
+            # Recogidas: SUBCONJUNTO de las entregadas marcadas como recogida
+            # (tipo='recogida'). Se muestra aparte para que al liquidar no se
+            # cuente una recogida como una entrega. Ahora es EXACTO (campo tipo);
+            # las históricas quedaron marcadas por el backfill de la migración.
             _recogidas=Count('visitas_despacho_rel', filter=Q(
                 visitas_despacho_rel__estado_entregado=True,
-                visitas_despacho_rel__destinatario__icontains='RECOGIDA')),
+                visitas_despacho_rel__tipo='recogida')),
         )
 
         registros = list(
