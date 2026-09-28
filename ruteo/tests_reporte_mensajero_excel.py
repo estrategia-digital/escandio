@@ -31,9 +31,11 @@ class ReporteMensajeroExcelTests(TenantTestCase):
         # Dos despachos del mismo mensajero/placa/dia -> una fila agregada.
         resultados = [
             {'id': 1, 'fecha': None, 'conductor_id': 7, 'conductor_nombre': 'Ana',
-             'vehiculo__placa': 'ABC', 'visitas': 10, 'visitas_entregadas': 8, 'visitas_novedad': 2},
+             'vehiculo__placa': 'ABC', 'visitas': 10, 'visitas_entregadas': 8,
+             'visitas_recogidas': 1, 'visitas_novedad': 2},
             {'id': 2, 'fecha': None, 'conductor_id': 7, 'conductor_nombre': 'Ana',
-             'vehiculo__placa': 'ABC', 'visitas': 5, 'visitas_entregadas': 5, 'visitas_novedad': 0},
+             'vehiculo__placa': 'ABC', 'visitas': 5, 'visitas_entregadas': 5,
+             'visitas_recogidas': 0, 'visitas_novedad': 0},
         ]
         wb = self._exportar(resultados)
         self.assertEqual(
@@ -43,10 +45,13 @@ class ReporteMensajeroExcelTests(TenantTestCase):
         hoja = wb['Detalle diario']
         self.assertEqual(hoja['A6'].value, 'Mensajero')
         self.assertEqual(hoja['A7'].value, 'Ana')
-        # despachos=2, asignadas=15, entregadas=13 en la fila agregada.
+        # Columnas: D Despachos, E Asignadas, F Entregadas, G Recogidas, H Novedades.
+        # despachos=2, asignadas=15, entregadas=13, recogidas=1 en la fila agregada.
         self.assertEqual(hoja['D7'].value, 2)
         self.assertEqual(hoja['E7'].value, 15)
         self.assertEqual(hoja['F7'].value, 13)
+        self.assertEqual(hoja['G6'].value, 'Recogidas')
+        self.assertEqual(hoja['G7'].value, 1)
         # Fila de totales suma asignadas.
         self.assertEqual(hoja['A8'].value, 'TOTAL')
         self.assertEqual(hoja['E8'].value, 15)
@@ -72,12 +77,14 @@ class ReporteMensajeroExcelTests(TenantTestCase):
         self.assertEqual(fila['visitas'], 3)              # real, no el contador (1)
         self.assertEqual(fila['visitas_entregadas'], 2)
         self.assertEqual(fila['visitas_novedad'], 1)
+        self.assertEqual(fila['visitas_recogidas'], 0)   # ninguna es "RECOGIDA"
         self.assertGreaterEqual(fila['visitas'], fila['visitas_entregadas'])
 
     def test_sin_asignar_y_sin_placa(self):
         resultados = [
             {'id': 1, 'fecha': None, 'conductor_id': None, 'conductor_nombre': None,
-             'vehiculo__placa': None, 'visitas': 3, 'visitas_entregadas': 1, 'visitas_novedad': 1},
+             'vehiculo__placa': None, 'visitas': 3, 'visitas_entregadas': 1,
+             'visitas_recogidas': 0, 'visitas_novedad': 1},
         ]
         hoja = self._exportar(resultados)['Detalle diario']
         self.assertEqual(hoja['A7'].value, 'Sin asignar')
