@@ -67,6 +67,12 @@ class RutVisitaSerializador(serializers.ModelSerializer):
         select_related_fields = ['despacho', 'ciudad']
 
 class RutVistaListaSerializador(serializers.ModelSerializer):
+    # Fecha del DESPACHO = día en que la guía salió a RUTA, distinta de 'fecha'
+    # (manifiesto/ingreso). Nombre con path 'despacho__fecha' para que el .only()
+    # del viewset (que usa Meta.fields) lo acepte junto a select_related.
+    despacho__fecha = serializers.DateTimeField(
+        source='despacho.fecha', read_only=True, allow_null=True, default=None)
+
     class Meta:
         model = RutVisita
         fields = [
@@ -93,6 +99,7 @@ class RutVistaListaSerializador(serializers.ModelSerializer):
             'orden',
             'distancia',
             'despacho_id',
+            'despacho__fecha',
             'franja_id',
             'franja_codigo',
             'observacion',
@@ -108,6 +115,7 @@ class RutVistaListaSerializador(serializers.ModelSerializer):
             'cita_inicio',
             'cita_fin'
         ]
+        select_related_fields = ['despacho']
 
 class RutVisitaDetalleSerializador(serializers.ModelSerializer):
     ciudad__nombre = serializers.CharField(source='ciudad.nombre', read_only=True, allow_null=True, default=None)
