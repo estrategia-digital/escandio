@@ -58,7 +58,7 @@ class RutVisitaSerializador(serializers.ModelSerializer):
 
     class Meta:
         model = RutVisita
-        fields = ['id', 'numero', 'fecha', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
+        fields = ['id', 'numero', 'tipo', 'fecha', 'documento', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
                   'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tarifa', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
                   'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'franja_id', 'franja_codigo', 'resultados',
                   'datos_entrega', 'fecha_entrega', 'remitente', 'tarifa', 'observacion', 'destinatario_direccion_complemento', 'cita_inicio', 'cita_fin',
@@ -105,6 +105,8 @@ class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSeria
         data = super().to_representation(instance)
         # Quién entregó ESTA guía (el usuario de la app móvil), para el informe.
         data['entregado_por_nombre'] = self._nombre_usuario(instance.entregado_por_id)
+        # Tipo legible (Entrega / Recogida) en vez del valor crudo.
+        data['tipo'] = instance.get_tipo_display()
         return data
 
     class Meta:
@@ -112,6 +114,7 @@ class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSeria
         fields = [
             'id',
             'numero',
+            'tipo',
             'fecha',
             'fecha_entrega',
             'documento',
@@ -204,7 +207,7 @@ class RutVisitaEntregaDespachoExcelSerializador(_EntregadoPorNombreMixin, serial
 
     class Meta:
         model = RutVisita
-        fields = ['numero', 'documento', 'destinatario', 'destinatario_direccion',
+        fields = ['numero', 'tipo', 'documento', 'destinatario', 'destinatario_direccion',
                   'destinatario_direccion_complemento',
                   'destinatario_telefono', 'franja_codigo', 'despacho_id',
                   'fecha_entrega', 'despacho__fecha', 'despacho__vehiculo__placa',
@@ -233,6 +236,7 @@ class RutVisitaEntregaDespachoExcelSerializador(_EntregadoPorNombreMixin, serial
         return {
             'Placa': placa,
             'Número': instance.numero,
+            'Tipo': instance.get_tipo_display(),
             'Día de ruta': dia_ruta,
             'Fecha entrega': entrega,
             'Documento': instance.documento,

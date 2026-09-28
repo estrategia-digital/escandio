@@ -9,8 +9,18 @@ CITA_TIPO_CHOICES = [
     ('preferente', 'Preferente'),
 ]
 
+# Tipo de servicio de la guía. Antes solo se distinguía una recogida por el texto
+# "RECOGIDA" en el destinatario (aproximado, 28 variantes); este campo lo hace
+# explícito para que los conteos de liquidación sean exactos. Default 'entrega'
+# (el import de Semántica y el flujo normal son entregas; la recogida se marca).
+VISITA_TIPO_CHOICES = [
+    ('entrega', 'Entrega'),
+    ('recogida', 'Recogida'),
+]
+
 class RutVisita(models.Model):
     numero = models.IntegerField(null=True)
+    tipo = models.CharField(max_length=20, choices=VISITA_TIPO_CHOICES, default='entrega', db_index=True)
     fecha = models.DateTimeField(null=True)  
     fecha_entrega = models.DateTimeField(null=True)  
     documento = models.CharField(max_length=30, null=True)
