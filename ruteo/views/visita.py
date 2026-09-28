@@ -11,7 +11,7 @@ from general.models.configuracion import GenConfiguracion
 from general.models.archivo import GenArchivo
 from general.models.ciudad import GenCiudad
 from contenedor.models import CtnDireccion, User
-from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
+from ruteo.serializers.visita import RutVisitaSerializador, RutVistaTraficoSerializador, RutVistaListaSerializador, RutVisitaExcelSerializador, RutVisitaEntregaDespachoExcelSerializador, RutVisitaDetalleSerializador, RutVistaEstadoSerializador
 from ruteo.servicios.visita import VisitaServicio
 from ruteo.servicios.complemento import ComplementoServicio
 from ruteo.servicios.notificacion import NotificacionServicio
@@ -120,6 +120,7 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         'lista_completa' : RutVistaListaSerializador,
         'trafico' : RutVistaTraficoSerializador,
         'excel': RutVisitaExcelSerializador,
+        'entrega_despacho': RutVisitaEntregaDespachoExcelSerializador,
         'detalle': RutVisitaDetalleSerializador
     }
 
@@ -179,7 +180,17 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
             if request.query_params.get('excel'):
-                # Export con la plantilla corporativa (encabezado, estilos, filtro).
+                # Informe "Entregas por despacho": Excel LIMPIO con solo las
+                # columnas del informe (el serializer ya devuelve los títulos como
+                # llaves y los tipos van como texto legible).
+                if request.query_params.get('serializador') == 'entrega_despacho':
+                    plantilla = ExcelPlantilla('Entregas por despacho')
+                    plantilla.agregar_hoja_datos(
+                        'Entregas', list(serializer.data),
+                        tipos={'Número': 'entero', 'Despacho': 'entero'},
+                    )
+                    return plantilla.respuesta('entregas_por_despacho.xlsx')
+                # Export estándar de visitas (todas las columnas).
                 plantilla = ExcelPlantilla('Visitas')
                 plantilla.agregar_hoja_datos(
                     'Visitas', list(serializer.data),

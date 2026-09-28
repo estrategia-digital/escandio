@@ -182,6 +182,62 @@ class RutVisitaExcelSerializador(serializers.ModelSerializer):
                   'estado_despacho']
         select_related_fields = ['despacho__vehiculo', 'ciudad']
 
+class RutVisitaEntregaDespachoExcelSerializador(_EntregadoPorNombreMixin, serializers.ModelSerializer):
+    """Excel LIMPIO del informe 'Entregas por despacho': SOLO las columnas del
+    informe, con día de ruta / fecha de entrega en hora LOCAL y estado legible.
+    Las llaves del dict que devuelve to_representation son directamente los
+    títulos de columna del Excel (y su orden), así el archivo sale limpio."""
+
+    # Declarados para que el .only() del viewset (que usa Meta.fields) acepte los
+    # paths con select_related; to_representation arma la salida final.
+    despacho__fecha = serializers.DateTimeField(
+        source='despacho.fecha', read_only=True, allow_null=True, default=None)
+    despacho__vehiculo__placa = serializers.CharField(
+        source='despacho.vehiculo.placa', read_only=True, allow_null=True, default=None)
+
+    class Meta:
+        model = RutVisita
+        fields = ['numero', 'documento', 'destinatario', 'destinatario_direccion',
+                  'destinatario_telefono', 'franja_codigo', 'despacho_id',
+                  'fecha_entrega', 'despacho__fecha', 'despacho__vehiculo__placa',
+                  'estado_entregado', 'estado_novedad', 'estado_despacho',
+                  'entregado_por_id']
+        select_related_fields = ['despacho__vehiculo']
+
+    def to_representation(self, instance):
+        from django.utils import timezone
+        loc = timezone.localtime
+        dia_ruta = (loc(instance.despacho.fecha).strftime('%Y-%m-%d')
+                    if instance.despacho_id and instance.despacho.fecha else None)
+        entrega = (loc(instance.fecha_entrega).strftime('%Y-%m-%d %H:%M')
+                   if instance.fecha_entrega else None)
+        if instance.estado_novedad:
+            estado = 'Con novedad'
+        elif instance.estado_entregado:
+            estado = 'Entregada'
+        elif instance.estado_despacho:
+            estado = 'Despachada'
+        else:
+            estado = 'Pendiente'
+        placa = (instance.despacho.vehiculo.placa
+                 if instance.despacho_id and instance.despacho.vehiculo_id else None)
+        # Las LLAVES son los títulos de columna del Excel (en este orden).
+        return {
+            'Placa': placa,
+            'Número': instance.numero,
+            'Día de ruta': dia_ruta,
+            'Fecha entrega': entrega,
+            'Documento': instance.documento,
+            'Destinatario': instance.destinatario,
+            'Dirección': instance.destinatario_direccion,
+            'Teléfono': instance.destinatario_telefono,
+            'Zona': instance.franja_codigo,
+            'Despacho': instance.despacho_id,
+            'Estado': estado,
+            'Entregado por': self._nombre_usuario(instance.entregado_por_id),
+        }
+
+
 class RutVistaTraficoSerializador(_EntregadoPorNombreMixin, serializers.ModelSerializer):
     class Meta:
         model = RutVisita
