@@ -38,6 +38,10 @@ class VisitaFilter(django_filters.FilterSet):
                   'estado_decodificado': ['exact'],
                   'estado_decodificado_alerta': ['exact'],
                   'fecha': ['gte', 'lte', 'gt', 'lt', 'exact'],
+                  # Fecha del DESPACHO (día de ruta): habilita el informe de
+                  # "entregas por despacho" (todas las guías de los despachos de
+                  # ese día, sin importar cuándo se entregó cada una).
+                  'despacho__fecha': ['gte', 'lte', 'gt', 'lt', 'exact'],
                   'fecha_entrega': ['gte', 'lte', 'gt', 'lt', 'exact'],
                   'destinatario':['icontains'],
                   'franja_id': ['exact'],
