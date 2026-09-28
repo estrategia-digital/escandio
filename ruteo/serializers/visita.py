@@ -103,6 +103,7 @@ class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSeria
             'id',
             'numero',
             'fecha',
+            'fecha_entrega',
             'documento',
             'remitente',
             'destinatario',
@@ -158,13 +159,15 @@ class RutVisitaDetalleSerializador(serializers.ModelSerializer):
 class RutVisitaExcelSerializador(serializers.ModelSerializer):
     ciudad__nombre = serializers.CharField(source='ciudad.nombre', read_only=True, allow_null=True, default=None)
     despacho__vehiculo__placa = serializers.CharField(source='despacho.vehiculo.placa', read_only=True, allow_null=True, default=None)
+    # Día de RUTA (fecha del despacho), para el informe de entregas por despacho.
+    despacho__fecha = serializers.DateTimeField(source='despacho.fecha', read_only=True, allow_null=True, default=None)
 
     class Meta:
         model = RutVisita
         fields = [
-                    'id', 'numero', 'fecha', 'documento', 'remitente', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
+                    'id', 'numero', 'fecha', 'fecha_entrega', 'documento', 'remitente', 'destinatario', 'destinatario_direccion', 'destinatario_direccion_formato',
                   'destinatario_telefono', 'destinatario_correo', 'unidades', 'peso', 'volumen', 'cobro', 'tarifa', 'tiempo', 'tiempo_servicio', 'tiempo_trayecto',
-                  'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'despacho__vehiculo__placa', 'franja_id', 'franja_codigo',
+                  'latitud', 'longitud', 'orden', 'distancia', 'ciudad', 'ciudad__nombre' , 'despacho', 'despacho__vehiculo__placa', 'despacho__fecha', 'franja_id', 'franja_codigo',
                   'cita_inicio', 'cita_fin',
                   'estado_decodificado',
                   'estado_novedad',
