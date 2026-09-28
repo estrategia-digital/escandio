@@ -66,12 +66,36 @@ class RutVisitaSerializador(serializers.ModelSerializer):
                   'estado_entregado', 'estado_entregado_complemento', 'estado_despacho']
         select_related_fields = ['despacho', 'ciudad']
 
-class RutVistaListaSerializador(serializers.ModelSerializer):
+class _EntregadoPorNombreMixin:
+    """Resuelve entregado_por_nombre (quién entregó cada guía) con cache por
+    instancia del serializer (reutilizado con many=True) -> 1 query por usuario
+    único en vez de 1 por guía. entregado_por_id es id plano a contenedor.User."""
+
+    def _nombre_usuario(self, usuario_id):
+        if not usuario_id:
+            return None
+        cache = self.__dict__.setdefault('_cache_usuarios', {})
+        if usuario_id not in cache:
+            from contenedor.models import User
+            u = User.objects.filter(pk=usuario_id).only('nombre', 'apellido').first()
+            cache[usuario_id] = (
+                f'{u.nombre or ""} {u.apellido or ""}'.strip() or None if u else None
+            )
+        return cache[usuario_id]
+
+
+class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSerializer):
     # Fecha del DESPACHO = día en que la guía salió a RUTA, distinta de 'fecha'
     # (manifiesto/ingreso). Nombre con path 'despacho__fecha' para que el .only()
     # del viewset (que usa Meta.fields) lo acepte junto a select_related.
     despacho__fecha = serializers.DateTimeField(
         source='despacho.fecha', read_only=True, allow_null=True, default=None)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Quién entregó ESTA guía (el usuario de la app móvil), para el informe.
+        data['entregado_por_nombre'] = self._nombre_usuario(instance.entregado_por_id)
+        return data
 
     class Meta:
         model = RutVisita
@@ -100,6 +124,7 @@ class RutVistaListaSerializador(serializers.ModelSerializer):
             'distancia',
             'despacho_id',
             'despacho__fecha',
+            'entregado_por_id',
             'franja_id',
             'franja_codigo',
             'observacion',
@@ -150,7 +175,7 @@ class RutVisitaExcelSerializador(serializers.ModelSerializer):
                   'estado_despacho']
         select_related_fields = ['despacho__vehiculo', 'ciudad']
 
-class RutVistaTraficoSerializador(serializers.ModelSerializer):
+class RutVistaTraficoSerializador(_EntregadoPorNombreMixin, serializers.ModelSerializer):
     class Meta:
         model = RutVisita
         # estado_decodificado(_alerta) y cita_* son necesarios para que el front
@@ -170,18 +195,6 @@ class RutVistaTraficoSerializador(serializers.ModelSerializer):
         # usuario unico en vez de 1 por guia.
         data['entregado_por_nombre'] = self._nombre_usuario(instance.entregado_por_id)
         return data
-
-    def _nombre_usuario(self, usuario_id):
-        if not usuario_id:
-            return None
-        cache = self.__dict__.setdefault('_cache_usuarios', {})
-        if usuario_id not in cache:
-            from contenedor.models import User
-            u = User.objects.filter(pk=usuario_id).only('nombre', 'apellido').first()
-            cache[usuario_id] = (
-                f'{u.nombre or ""} {u.apellido or ""}'.strip() or None if u else None
-            )
-        return cache[usuario_id]
 
 class RutVistaEstadoSerializador(serializers.ModelSerializer):
     class Meta:
