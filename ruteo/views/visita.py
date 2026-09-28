@@ -1300,6 +1300,14 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         visita.estado_entregado = True
                         visita.fecha_entrega = fecha_entrega
                         visita.datos_entrega = datos_entrega
+                        # Quien ENTREGO: usuario autenticado del token movil. La app
+                        # congelada (v1.6.4) no manda nada nuevo; el server lo deduce
+                        # del token, asi que el contrato NO cambia. Habilita "quien
+                        # entrego cada guia" en los informes (la v2 ya lo seteaba;
+                        # esta era la ruta legacy que lo dejaba en null). AnonymousUser
+                        # -> id None -> no se setea.
+                        if getattr(request.user, 'id', None):
+                            visita.entregado_por_id = request.user.id
                         # El contador visitas_entregadas lo repone la señal de RutVisita.
                         visita.save()
                         # Las evidencias (fotos/firmas) se suben a Backblaze DESPUES
