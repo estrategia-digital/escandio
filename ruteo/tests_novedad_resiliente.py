@@ -102,3 +102,34 @@ class NovedadResilienteTests(TenantTestCase):
         # El contador de novedades del despacho no se inflo con el reenvio.
         self.despacho.refresh_from_db()
         self.assertEqual(self.despacho.visitas_novedad, 1)
+
+    @patch('ruteo.views.novedad.NotificacionServicio.notificar_visita_novedad')
+    def test_resuelve_por_numero_cuando_el_id_se_movio(self, mock_notif):
+        # La guia se re-importo con id nuevo; la novedad offline apunta al viejo.
+        # Se resuelve por numero (guia estable) y se crea sobre la guia vigente.
+        despacho = RutDespacho.objects.create(conductor_id=self.user.id, visitas=1)
+        vieja = RutVisita.objects.create(
+            numero=900500, despacho=despacho, estado_despacho=True, ciudad_id=None,
+        )
+        id_viejo = vieja.id
+        vieja.delete()
+        nueva = RutVisita.objects.create(
+            numero=900500, despacho=despacho, estado_despacho=True, ciudad_id=None,
+        )
+        r = self.client.post(
+            '/ruteo/novedad/nuevo/',
+            {
+                'visita_id': id_viejo,
+                'numero': 900500,
+                'novedad_tipo_id': self.tipo.id,
+                'fecha': '2026-01-01 10:00',
+                'descripcion': 'no estaba',
+                'movil_token': 'tok-num',
+            },
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        novedad = RutNovedad.objects.get(pk=r.data['id'])
+        self.assertEqual(novedad.visita_id, nueva.id)
+        nueva.refresh_from_db()
+        self.assertTrue(nueva.estado_novedad)

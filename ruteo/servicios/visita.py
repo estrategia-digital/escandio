@@ -24,6 +24,39 @@ logger = logging.getLogger(__name__)
 class VisitaServicio():
 
     @staticmethod
+    def resolver_por_numero(numero, conductor_id=None, con_lock=False):
+        """Resuelve la visita ABIERTA por NÚMERO de guía (estable) cuando el id
+        se movió por un re-import.
+
+        La app graba la evidencia offline contra RutVisita.id. Si la guía se
+        re-importa ("Nuevo desde complemento" crea filas con id nuevo) o se
+        borró la copia vieja, ese id ya no apunta a la guía → el conductor
+        recibe "la visita no existe" y pierde la entrega. El número de guía
+        (codigoGuiaPk de Semántica) NO cambia, así que sirve de ancla estable.
+
+        Prioridad: (1) guía abierta del conductor logueado; (2) cualquier guía
+        abierta con ese número en un despacho. Entre duplicadas abiertas elige
+        la más reciente (la que dejó el último import). Devuelve None si no hay
+        ninguna abierta (todas entregadas → el caller decide idempotencia).
+
+        `con_lock=True` requiere estar dentro de una transacción (entrega).
+        """
+        if not numero:
+            return None
+        qs = RutVisita.objects.filter(
+            numero=numero, estado_entregado=False, despacho_id__isnull=False,
+        )
+        if con_lock:
+            qs = qs.select_for_update()
+        if conductor_id:
+            propia = qs.filter(
+                despacho__conductor_id=conductor_id,
+            ).order_by('-id').first()
+            if propia is not None:
+                return propia
+        return qs.order_by('-id').first()
+
+    @staticmethod
     def haversine(lat1, lon1, lat2, lon2):
         R = 6371.0  # Radio de la Tierra en kilómetros
         lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])

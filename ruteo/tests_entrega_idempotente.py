@@ -125,6 +125,101 @@ class EntregaIdempotenteTests(TenantTestCase):
         mock_notif.assert_not_called()
 
 
+class EntregaPorNumeroTests(TenantTestCase):
+    """El id de la guia se mueve al re-importar ("Nuevo desde complemento" crea
+    filas con id nuevo). La evidencia offline apunta al id viejo -> antes daba
+    "la visita no existe" y el conductor perdia la entrega. Ahora se resuelve por
+    NUMERO de guia (estable): primero la del conductor, luego cualquier abierta.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = TenantClient(self.tenant)
+        GenEmpresa.objects.get_or_create(
+            pk=1,
+            defaults={'nombre_corto': 'E', 'correo': 'e@x.com', 'contenedor_id': 1},
+        )
+        GenConfiguracion.objects.get_or_create(
+            pk=1, defaults={'rut_sincronizar_complemento': False},
+        )
+        self.user = User.objects.create(
+            username='cond.num@x.com', correo='cond.num@x.com',
+            nombre='C', apellido='N', is_active=True,
+        )
+        self.token = str(RefreshToken.for_user(self.user).access_token)
+
+    def _entregar(self, id_enviado, numero=None):
+        data = {'id': id_enviado, 'fecha_entrega': '2026-01-01 10:00'}
+        if numero is not None:
+            data['numero'] = numero
+        return self.client.post(
+            '/ruteo/visita/entrega/', data,
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+    @patch('ruteo.views.visita.NotificacionServicio.notificar_visita_entregada')
+    def test_resuelve_por_numero_cuando_el_id_se_movio(self, _n):
+        # Despacho del conductor + guia G100. El conductor grabo offline contra
+        # este id, pero luego la guia se re-importo con id nuevo.
+        despacho = RutDespacho.objects.create(conductor_id=self.user.id, visitas=1)
+        vieja = RutVisita.objects.create(
+            numero=900100, despacho=despacho, estado_despacho=True, ciudad_id=None,
+        )
+        id_viejo = vieja.id
+        vieja.delete()  # el import borro la copia vieja
+        nueva = RutVisita.objects.create(
+            numero=900100, despacho=despacho, estado_despacho=True, ciudad_id=None,
+        )
+
+        r = self._entregar(id_viejo, numero=900100)
+
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['mensaje'], 'Entrega con exito')
+        nueva.refresh_from_db()
+        self.assertTrue(nueva.estado_entregado)
+
+    @patch('ruteo.views.visita.NotificacionServicio.notificar_visita_entregada')
+    def test_prioriza_la_guia_del_conductor(self, _n):
+        # Dos guias abiertas con el mismo numero: una del conductor, otra de otro
+        # despacho. Debe entregar la del conductor logueado.
+        d_otro = RutDespacho.objects.create(conductor_id=999999, visitas=1)
+        ajena = RutVisita.objects.create(
+            numero=900200, despacho=d_otro, estado_despacho=True, ciudad_id=None,
+        )
+        d_mio = RutDespacho.objects.create(conductor_id=self.user.id, visitas=1)
+        propia = RutVisita.objects.create(
+            numero=900200, despacho=d_mio, estado_despacho=True, ciudad_id=None,
+        )
+
+        r = self._entregar(999888777, numero=900200)  # id inexistente
+
+        self.assertEqual(r.status_code, 200, r.content)
+        propia.refresh_from_db()
+        ajena.refresh_from_db()
+        self.assertTrue(propia.estado_entregado)
+        self.assertFalse(ajena.estado_entregado)
+
+    @patch('ruteo.views.visita.NotificacionServicio.notificar_visita_entregada')
+    def test_numero_existe_pero_ya_entregada_es_idempotente(self, _n):
+        # La copia buena ya se cerro (entregada). El reenvio con el id viejo debe
+        # ser idempotente (200), no un error que reintente en bucle.
+        despacho = RutDespacho.objects.create(conductor_id=self.user.id, visitas=1)
+        entregada = RutVisita.objects.create(
+            numero=900300, despacho=despacho, estado_despacho=True, ciudad_id=None,
+            estado_entregado=True,
+        )
+        r = self._entregar(999888777, numero=900300)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['mensaje'], 'La visita ya estaba entregada')
+
+    def test_sin_numero_e_id_inexistente_conserva_codigo_15(self):
+        # Cliente viejo (no manda numero) + id que no existe: comportamiento
+        # anterior intacto -> "no existe" (no rompe el contrato).
+        r = self._entregar(999888777)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.data.get('codigo'), 15)
+
+
 class EntregaLockGuardTests(TestCase):
     """Blindaje del fix de concurrencia: entrega_action DEBE tomar el lock de fila.
 
