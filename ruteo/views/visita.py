@@ -163,9 +163,13 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         ).values_list('entregado_por_id', flat=True).first()
         entregado_por_nombre = None
         if entregado_por_id:
-            u = User.objects.filter(pk=entregado_por_id).values('nombre', 'apellido').first()
+            u = User.objects.filter(pk=entregado_por_id).values('nombre', 'apellido', 'correo', 'username').first()
             if u:
-                entregado_por_nombre = f"{u['nombre'] or ''} {u['apellido'] or ''}".strip() or None
+                # Fallback al correo/usuario si el perfil no tiene nombre.
+                entregado_por_nombre = (
+                    f"{u['nombre'] or ''} {u['apellido'] or ''}".strip()
+                    or u['correo'] or u['username'] or None
+                )
         respuesta.data['entregado_por_id'] = entregado_por_id
         respuesta.data['entregado_por_nombre'] = entregado_por_nombre
         return respuesta

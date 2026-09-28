@@ -77,10 +77,17 @@ class _EntregadoPorNombreMixin:
         cache = self.__dict__.setdefault('_cache_usuarios', {})
         if usuario_id not in cache:
             from contenedor.models import User
-            u = User.objects.filter(pk=usuario_id).only('nombre', 'apellido').first()
-            cache[usuario_id] = (
-                f'{u.nombre or ""} {u.apellido or ""}'.strip() or None if u else None
-            )
+            u = (User.objects.filter(pk=usuario_id)
+                 .only('nombre', 'apellido', 'correo', 'username').first())
+            if u:
+                # Cae al correo/usuario cuando el perfil no tiene nombre, para que
+                # "Entregado por" siempre muestre algo identificable (auditoría).
+                cache[usuario_id] = (
+                    f'{u.nombre or ""} {u.apellido or ""}'.strip()
+                    or u.correo or u.username or None
+                )
+            else:
+                cache[usuario_id] = None
         return cache[usuario_id]
 
 
