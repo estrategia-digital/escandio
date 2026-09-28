@@ -1169,6 +1169,9 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path=r'entrega',)
     def entrega_action(self, request):
         id = request.POST.get('id')
+        # Número de guía (estable) para resolver la entrega si el id se movió por
+        # un re-import. Campo OPCIONAL y aditivo: clientes viejos no lo mandan.
+        numero = request.POST.get('numero')
         imagenes = request.FILES.getlist('imagenes')
         firmas = request.FILES.getlist('firmas')
         fecha_entrega_parametro = request.POST.get('fecha_entrega')
@@ -1204,7 +1207,26 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     # El reenvio SECUENCIAL (respuesta perdida) ya era idempotente
                     # por el chequeo de estado_entregado; esto cierra el hueco del
                     # solape concurrente que el auto-sync hace mas probable.
-                    visita = RutVisita.objects.select_for_update().get(pk=id)
+                    visita = RutVisita.objects.select_for_update().filter(pk=id).first()
+                    if visita is None:
+                        # El id se movió: la guía se re-importó (id nuevo) o se
+                        # borró la copia vieja, pero la evidencia offline apunta
+                        # al id viejo. Se resuelve por NÚMERO (estable): primero
+                        # la guía abierta del conductor, luego cualquier abierta.
+                        visita = VisitaServicio.resolver_por_numero(
+                            numero, request.user.id, con_lock=True,
+                        )
+                    if visita is None:
+                        # Sin visita por id NI por número abierto: si el número
+                        # existe pero YA está entregada (la copia buena se cerró),
+                        # es idempotente (éxito), no un error que reintente en
+                        # bucle. Solo es "no existe" si el número no aparece.
+                        if numero and RutVisita.objects.filter(numero=numero).exists():
+                            return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
+                        return Response({'mensaje': 'La visita no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
+                    # A partir de acá se usa el id REAL resuelto (evidencias,
+                    # contadores, nombres de archivo), no el id viejo del request.
+                    id = visita.id
 
                     if visita.despacho_id is None:
                         # Visita detachada de su despacho (admin libero/anulo/retiro/

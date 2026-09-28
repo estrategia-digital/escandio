@@ -17,6 +17,7 @@ from django.utils import timezone
 from utilidades.backblaze import Backblaze
 from utilidades.imagen import Imagen
 from ruteo.servicios.complemento import ComplementoServicio
+from ruteo.servicios.visita import VisitaServicio
 import base64
 import logging
 from datetime import datetime
@@ -102,11 +103,21 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
         fecha_texto = request.POST.get('fecha')
         descripcion = request.POST.get('descripcion')
         movil_token = request.POST.get('movil_token')
-        if visita_id and novedad_tipo_id and fecha_texto and movil_token:            
-            try:
-                visita = RutVisita.objects.get(pk=visita_id)
-            except RutVisita.DoesNotExist:
+        # Número de guía (estable) para resolver si el id se movió por re-import.
+        # Campo OPCIONAL y aditivo: clientes viejos no lo mandan.
+        numero = request.POST.get('numero')
+        if visita_id and novedad_tipo_id and fecha_texto and movil_token:
+            visita = RutVisita.objects.filter(pk=visita_id).first()
+            if visita is None:
+                # El id se movió (re-import): se resuelve por NÚMERO (estable),
+                # priorizando la guía abierta del conductor.
+                visita = VisitaServicio.resolver_por_numero(
+                    numero, request.user.id,
+                )
+            if visita is None:
                 return Response({'mensaje': 'La visita no existe', 'codigo': 2}, status=status.HTTP_400_BAD_REQUEST)
+            # Usar el id REAL resuelto (no el viejo del request).
+            visita_id = visita.id
             
             # Idempotencia del reenvio del auto-sync (mismo movil_token).
             novedad = RutNovedad.objects.filter(movil_token=movil_token).first()
