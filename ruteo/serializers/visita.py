@@ -205,6 +205,7 @@ class RutVisitaEntregaDespachoExcelSerializador(_EntregadoPorNombreMixin, serial
     class Meta:
         model = RutVisita
         fields = ['numero', 'documento', 'destinatario', 'destinatario_direccion',
+                  'destinatario_direccion_complemento',
                   'destinatario_telefono', 'franja_codigo', 'despacho_id',
                   'fecha_entrega', 'despacho__fecha', 'despacho__vehiculo__placa',
                   'estado_entregado', 'estado_novedad', 'estado_despacho',
@@ -237,6 +238,7 @@ class RutVisitaEntregaDespachoExcelSerializador(_EntregadoPorNombreMixin, serial
             'Documento': instance.documento,
             'Destinatario': instance.destinatario,
             'Dirección': instance.destinatario_direccion,
+            'Descripción': instance.destinatario_direccion_complemento,
             'Teléfono': instance.destinatario_telefono,
             'Zona': instance.franja_codigo,
             'Despacho': instance.despacho_id,
