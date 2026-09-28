@@ -58,6 +58,13 @@ class ReporteMensajeroView(APIView):
             # guía con novedad ya entregada se contaba en ambas -> asignadas !=
             # entregadas + novedades + pendientes y se sobre-reportaban novedades.
             _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True, visitas_despacho_rel__estado_entregado=False)),
+            # Recogidas: SUBCONJUNTO de las entregadas cuyo destinatario dice
+            # "RECOGIDA" (una recogida se marca entregada). Se muestra aparte para
+            # que al liquidar no se cuente una recogida como una entrega. Es la
+            # ÚNICA señal disponible (no hay campo tipo), así que es aproximada.
+            _recogidas=Count('visitas_despacho_rel', filter=Q(
+                visitas_despacho_rel__estado_entregado=True,
+                visitas_despacho_rel__destinatario__icontains='RECOGIDA')),
         )
 
         registros = list(
@@ -68,6 +75,7 @@ class ReporteMensajeroView(APIView):
                 '_asignadas',
                 '_entregadas',
                 '_novedades',
+                '_recogidas',
                 'vehiculo__placa',
             ).order_by('-fecha')
         )
@@ -84,6 +92,7 @@ class ReporteMensajeroView(APIView):
                 'visitas': r['_asignadas'],
                 'visitas_entregadas': r['_entregadas'],
                 'visitas_novedad': r['_novedades'],
+                'visitas_recogidas': r['_recogidas'],
             }
             for r in registros
         ]
@@ -119,12 +128,14 @@ class ReporteMensajeroView(APIView):
                     'mensajero': r['conductor_nombre'] or 'Sin asignar',
                     'placa': r['vehiculo__placa'] or 'Sin placa',
                     'fecha': dia(r['fecha']),
-                    'despachos': 0, 'asignadas': 0, 'entregadas': 0, 'novedades': 0,
+                    'despachos': 0, 'asignadas': 0, 'entregadas': 0,
+                    'recogidas': 0, 'novedades': 0,
                 }
                 detalle[clave] = fila
             fila['despachos'] += 1
             fila['asignadas'] += r['visitas'] or 0
             fila['entregadas'] += r['visitas_entregadas'] or 0
+            fila['recogidas'] += r.get('visitas_recogidas', 0) or 0
             fila['novedades'] += r['visitas_novedad'] or 0
 
         filas = sorted(detalle.values(), key=lambda f: (f['mensajero'], f['placa']))
@@ -138,10 +149,11 @@ class ReporteMensajeroView(APIView):
                 g = grupos.get(f[campo])
                 if g is None:
                     g = {campo: f[campo], '_dias': set(),
-                         'despachos': 0, 'asignadas': 0, 'entregadas': 0, 'novedades': 0}
+                         'despachos': 0, 'asignadas': 0, 'entregadas': 0,
+                         'recogidas': 0, 'novedades': 0}
                     grupos[f[campo]] = g
                 g['_dias'].add(f['fecha'])
-                for c in ('despachos', 'asignadas', 'entregadas', 'novedades'):
+                for c in ('despachos', 'asignadas', 'entregadas', 'recogidas', 'novedades'):
                     g[c] += f[c]
             salida = []
             for g in sorted(grupos.values(), key=lambda x: x[campo]):
@@ -154,10 +166,11 @@ class ReporteMensajeroView(APIView):
             {'clave': 'despachos', 'titulo': 'Despachos', 'tipo': 'entero'},
             {'clave': 'asignadas', 'titulo': 'Asignadas', 'tipo': 'entero'},
             {'clave': 'entregadas', 'titulo': 'Entregadas', 'tipo': 'entero'},
+            {'clave': 'recogidas', 'titulo': 'Recogidas', 'tipo': 'entero'},
             {'clave': 'novedades', 'titulo': 'Novedades', 'tipo': 'entero'},
             {'clave': 'cumplimiento', 'titulo': '% Cumplimiento', 'tipo': 'numero'},
         ]
-        sumables = ['despachos', 'asignadas', 'entregadas', 'novedades']
+        sumables = ['despachos', 'asignadas', 'entregadas', 'recogidas', 'novedades']
 
         plantilla = ExcelPlantilla('Reporte por mensajero', _rango_texto(fecha_desde, fecha_hasta))
         plantilla.agregar_hoja(
