@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Q
+from django.utils import timezone
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.visita import RutVisita
 from ruteo.models.franja import RutFranja
@@ -98,7 +99,12 @@ class ReporteMensajeroView(APIView):
         # parten de las mismas filas por despacho, asi que dan el mismo numero.
         # Consolidar en una sola fuente queda como mejora futura.
         def dia(f):
-            return f.date().isoformat() if f else ''
+            # Día LOCAL (America/Bogota), no UTC: la BD está en UTC y f.date()
+            # daría el día UTC, corriendo un día los despachos creados de noche
+            # (>=19:00 local). El filtro ya usa fecha__date (zona activa = local)
+            # y Movimiento muestra local; sin esto, el reporte no cuadra con
+            # Movimiento por esos despachos. Ver nota de zona horaria.
+            return timezone.localtime(f).date().isoformat() if f else ''
 
         def cumplimiento(entregadas, asignadas):
             # Igual que el front: 1 decimal, medio hacia arriba.
