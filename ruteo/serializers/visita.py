@@ -90,6 +90,9 @@ class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSeria
     # del viewset (que usa Meta.fields) lo acepte junto a select_related.
     despacho__fecha = serializers.DateTimeField(
         source='despacho.fecha', read_only=True, allow_null=True, default=None)
+    # Placa del vehículo del despacho (detalle del informe de entregas).
+    despacho__vehiculo__placa = serializers.CharField(
+        source='despacho.vehiculo.placa', read_only=True, allow_null=True, default=None)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -125,6 +128,7 @@ class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSeria
             'distancia',
             'despacho_id',
             'despacho__fecha',
+            'despacho__vehiculo__placa',
             'entregado_por_id',
             'franja_id',
             'franja_codigo',
@@ -141,7 +145,7 @@ class RutVistaListaSerializador(_EntregadoPorNombreMixin, serializers.ModelSeria
             'cita_inicio',
             'cita_fin'
         ]
-        select_related_fields = ['despacho']
+        select_related_fields = ['despacho__vehiculo']
 
 class RutVisitaDetalleSerializador(serializers.ModelSerializer):
     ciudad__nombre = serializers.CharField(source='ciudad.nombre', read_only=True, allow_null=True, default=None)
