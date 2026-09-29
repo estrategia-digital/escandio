@@ -26,6 +26,8 @@ Endpoints — ver paths y shapes exactos en openapi_v2.yaml:
     GET  /api/v2/despachos/              -> lista de despachos asignados al conductor
     POST /api/v2/despachos/tomar/        -> {oe} el conductor TOMA la orden por su OE (self-service)
     POST /api/v2/despachos/soltar/       -> {id} el conductor SUELTA una orden suya (inverso de tomar)
+    POST /api/v2/despachos/finalizar/    -> {id} el conductor FINALIZA (0 pendientes) -> Historial (reversible)
+    POST /api/v2/despachos/reabrir/      -> {id} el conductor REABRE un despacho finalizado
     GET  /api/v2/despachos/<id>/         -> {schema_name, despacho_id, ...}
 
   Subdominio del tenant ({schema}.ruteoapi.co):
@@ -66,6 +68,8 @@ ENDPOINTS_MOVIL_V2 = (
     'GET /api/v2/despachos/',
     'POST /api/v2/despachos/tomar/',
     'POST /api/v2/despachos/soltar/',
+    'POST /api/v2/despachos/finalizar/',
+    'POST /api/v2/despachos/reabrir/',
     'GET /api/v2/despachos/<id>/',
     'GET /api/v2/visitas/',
     'POST /api/v2/visitas/<id>/entregar/',

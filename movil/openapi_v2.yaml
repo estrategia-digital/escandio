@@ -209,6 +209,22 @@ paths:
         Filtra VerEntrega por usuario_id == request.user.id, ordenados por fecha
         descendente. Devuelve un array plano (sin paginar): un conductor maneja
         pocos despachos vigentes a la vez, no vale la pena paginar.
+
+        `?estado=`:
+          - `activas` (default): los que aun trabaja (ni finalizados por el conductor
+            ni terminados por la oficina).
+          - `historial`: los que ya cerro (finalizados por el conductor o terminados).
+          - `todas`: sin filtrar por estado.
+      parameters:
+      - in: query
+        name: estado
+        schema:
+          type: string
+          enum:
+          - activas
+          - historial
+          - todas
+        description: Filtra por estado del viaje (default 'activas').
       tags:
       - despachos
       security:
@@ -248,6 +264,73 @@ paths:
               schema:
                 $ref: '#/components/schemas/DespachoMovil'
           description: ''
+  /api/v2/despachos/finalizar/:
+    post:
+      operationId: despachos_finalizar_create
+      description: |-
+        El CONDUCTOR finaliza su despacho cuando NO le quedan pendientes (toda guia
+        entregada o con novedad). Marca `estado_finalizado_conductor` en el RutDespacho
+        (tenant) y en la VerEntrega (public), para sacarlo de sus activas y mandarlo a
+        Historial. Es REVERSIBLE (reabrir) y NO crea RutTerminacion (eso es del admin).
+
+        Reusa `DespachoServicio.validar_terminacion` para la regla de "0 pendientes"
+        (misma validacion que el Terminar del admin). Patron tenant<->public identico
+        a soltar: el RutDespacho se lee/escribe DENTRO del schema_context; la VerEntrega
+        que lee el movil es la de public y se actualiza FUERA.
+      tags:
+      - despachos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DespachoIdRequestRequest'
+            examples:
+              Finalizar:
+                value:
+                  id: 14163
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DespachoIdRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DespachoIdRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Despacho finalizado
+  /api/v2/despachos/reabrir/:
+    post:
+      operationId: despachos_reabrir_create
+      description: |-
+        El conductor REABRE un despacho que habia finalizado (vuelve de Historial a
+        activas), p.ej. porque soluciono una novedad y va a entregar. Revierte
+        `estado_finalizado_conductor` (tenant + public). NO se puede reabrir si el
+        admin ya lo TERMINO (definitivo): en ese caso queda en Historial.
+      tags:
+      - despachos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DespachoIdRequestRequest'
+            examples:
+              Reabrir:
+                value:
+                  id: 14163
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DespachoIdRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DespachoIdRequestRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: Despacho reabierto
   /api/v2/despachos/soltar/:
     post:
       operationId: despachos_soltar_create
@@ -507,6 +590,11 @@ paths:
         Filtros utiles: ?despacho_id=&estado_entregado=&estado_novedad=
       parameters:
       - in: query
+        name: buscar
+        schema:
+          type: string
+        description: Busqueda rapida
+      - in: query
         name: cita_fin__gte
         schema:
           type: string
@@ -531,6 +619,31 @@ paths:
           type: boolean
       - in: query
         name: cita_inicio__lte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: despacho__fecha
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: despacho__fecha__gt
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: despacho__fecha__gte
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: despacho__fecha__lt
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: despacho__fecha__lte
         schema:
           type: string
           format: date-time
@@ -775,6 +888,16 @@ components:
       - movil_token
       - novedad_tipo_id
       - visita_id
+    DespachoIdRequestRequest:
+      type: object
+      description: 'Body de finalizar/reabrir: el id (VerEntrega) de la orden.'
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: El id de la orden (VerEntrega.id).
+      required:
+      - id
     DespachoMovil:
       type: object
       description: |-
@@ -857,11 +980,19 @@ components:
           type: string
           nullable: true
           readOnly: true
+        estado_finalizado_conductor:
+          type: boolean
+          readOnly: true
+        estado_terminado:
+          type: boolean
+          readOnly: true
       required:
       - codigo_complemento
       - contenedor_id
       - despacho_id
       - empresa_nombre
+      - estado_finalizado_conductor
+      - estado_terminado
       - fecha
       - id
       - orden_entrega

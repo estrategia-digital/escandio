@@ -18,6 +18,11 @@ class RutDespacho(models.Model):
     estado_aprobado = models.BooleanField(default = False)
     estado_terminado = models.BooleanField(default = False)
     estado_anulado = models.BooleanField(default = False)
+    # El CONDUCTOR marca "Finalizar" desde la app cuando ya no tiene pendientes
+    # (toda guia entregada o con novedad). Es reversible (Reabrir) y NO crea
+    # RutTerminacion: es solo su parte, para sacar el despacho de sus "activas" y
+    # mandarlo a Historial. El admin "Termina" en la web (definitivo, estado_terminado).
+    estado_finalizado_conductor = models.BooleanField(default=False)
     entrega_id = models.IntegerField(null=True)
     codigo_complemento = models.IntegerField(null=True)
     latitud = models.DecimalField(max_digits=25, decimal_places=15, null=True)

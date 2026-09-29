@@ -252,6 +252,13 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 DespachoServicio.guardar_terminacion(
                     despacho, consolidado, usuario_id=getattr(request.user, 'id', None)
                 )
+                # Espeja el cierre a la VerEntrega publica (la que lee el movil) para
+                # que el despacho pase a Historial en la app. Mismo patron que
+                # asignar-conductor/anular (tenant -> public por despacho_id+schema).
+                VerEntrega.objects.filter(
+                    despacho_id=despacho.id,
+                    schema_name=request.tenant.schema_name,
+                ).update(estado_terminado=True)
                 return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)
         except RutDespacho.DoesNotExist:
             return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)

@@ -19,6 +19,8 @@ from movil.views.auth import (
 from movil.views.despacho import (
     DespachoMovilView,
     DespachosMiasView,
+    FinalizarDespachoView,
+    ReabrirDespachoView,
     SoltarDespachoView,
     TomarDespachoView,
 )
@@ -44,6 +46,8 @@ urlpatterns = [
     # 'tomar' antes de '<int:pk>' (aunque <int> no captura texto, queda explicito).
     path('despachos/tomar/', TomarDespachoView.as_view(), name='movil-despacho-tomar'),
     path('despachos/soltar/', SoltarDespachoView.as_view(), name='movil-despacho-soltar'),
+    path('despachos/finalizar/', FinalizarDespachoView.as_view(), name='movil-despacho-finalizar'),
+    path('despachos/reabrir/', ReabrirDespachoView.as_view(), name='movil-despacho-reabrir'),
     path('despachos/<int:pk>/', DespachoMovilView.as_view(), name='movil-despacho'),
     path('ubicacion/', UbicacionMovilView.as_view(), name='movil-ubicacion'),
     path('schema/', SpectacularAPIView.as_view(), name='schema-v2'),
