@@ -86,6 +86,8 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
                 movil_token=movil_token,
                 imagenes=request.FILES.getlist('imagenes'),
                 tenant=request.tenant,
+                creado_por_id=request.user.id,
+                origen=RutNovedad.ORIGEN_APP,
             )
         except EvidenciaNoGuardada:
             return responses.error(

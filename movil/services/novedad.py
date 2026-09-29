@@ -94,7 +94,8 @@ def _notificar(novedad, descripcion, novedad_tipo_id, tenant):
         pass
 
 
-def registrar_novedad(visita, novedad_tipo_id, fecha, descripcion, movil_token, imagenes, tenant):
+def registrar_novedad(visita, novedad_tipo_id, fecha, descripcion, movil_token, imagenes, tenant,
+                      creado_por_id=None, origen=RutNovedad.ORIGEN_APP):
     """Crea la novedad (idempotente por movil_token) y devuelve la novedad.
 
     `fecha` ya es un datetime aware. `visita` ya fue validada.
@@ -110,6 +111,8 @@ def registrar_novedad(visita, novedad_tipo_id, fecha, descripcion, movil_token, 
             novedad_tipo_id=novedad_tipo_id,
             descripcion=descripcion,
             movil_token=movil_token,
+            creado_por_id=creado_por_id,
+            origen=origen,
         )
         visita.estado_novedad = True
         visita.save(update_fields=['estado_novedad'])

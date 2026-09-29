@@ -86,10 +86,15 @@ def _registrar(despacho_id, visita_id, tipo_id, motivo, tenant):
     if not RutNovedadTipo.objects.filter(pk=tipo_id).exists():
         return False, 'Ese tipo de novedad no existe.'
     token = f'agente:{despacho_id}:{visita.id}:{tipo_id}'
+    from ruteo.models.despacho import RutDespacho
+    from ruteo.models.novedad import RutNovedad
+    conductor_id = RutDespacho.objects.filter(pk=despacho_id).values_list(
+        'conductor_id', flat=True).first()
     try:
         registrar_novedad(
             visita=visita, novedad_tipo_id=tipo_id, fecha=timezone.now(),
             descripcion=(motivo or '').strip(), movil_token=token, imagenes=[], tenant=tenant,
+            creado_por_id=conductor_id, origen=RutNovedad.ORIGEN_LOGY,
         )
     except Exception:
         # La novedad puede haber quedado escrita y fallar solo la notificación: no

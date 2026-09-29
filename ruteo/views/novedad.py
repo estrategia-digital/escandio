@@ -146,7 +146,10 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
                 serializer = RutNovedadSerializador(data=data)
                 if not serializer.is_valid():
                     return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-                novedad = serializer.save()
+                novedad = serializer.save(
+                    creado_por_id=request.user.id,
+                    origen=RutNovedad.ORIGEN_LEGACY,
+                )
                 visita.estado_novedad = True
                 # El contador visitas_novedad lo repone la señal de RutVisita.
                 visita.save(update_fields=['estado_novedad'])
