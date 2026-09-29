@@ -18,6 +18,11 @@ class VerEntrega(models.Model):
     contenedor_id = models.IntegerField()
     schema_name = models.CharField(max_length=100, null=True)
     usuario_id = models.IntegerField(null=True)
+    # Espejo de las banderas del RutDespacho del tenant (que el Home no puede leer
+    # por schema). Se pueblan al finalizar/reabrir (conductor) y terminar (admin),
+    # para que la app separe despachos ACTIVOS de HISTORIAL sin entrar a cada schema.
+    estado_finalizado_conductor = models.BooleanField(default=False)
+    estado_terminado = models.BooleanField(default=False)
 
     class Meta:
         db_table = "ver_entrega"

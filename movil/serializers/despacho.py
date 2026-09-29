@@ -33,6 +33,11 @@ class DespachoMovilSerializer(serializers.ModelSerializer):
             'tiempo_trayecto', 'visitas', 'visitas_entregadas', 'despacho_id',
             'codigo_complemento', 'orden_entrega',
             'contenedor_id', 'usuario_id', 'schema_name', 'empresa_nombre',
+            # Banderas de estado del viaje: 'estado_finalizado_conductor' (el
+            # conductor ya lo dio por terminado, reversible) y 'estado_terminado'
+            # (la oficina lo cerro, definitivo). La app las usa para separar
+            # activos de Historial y habilitar Finalizar/Reabrir.
+            'estado_finalizado_conductor', 'estado_terminado',
         ]
         read_only_fields = fields
 

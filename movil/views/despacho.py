@@ -1,7 +1,7 @@
 """Vista de despacho/entrega de la API movil v2."""
 from django.db.models import Q
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -68,17 +68,36 @@ class DespachosMiasView(MovilApiMixin, generics.ListAPIView):
     Filtra VerEntrega por usuario_id == request.user.id, ordenados por fecha
     descendente. Devuelve un array plano (sin paginar): un conductor maneja
     pocos despachos vigentes a la vez, no vale la pena paginar.
+
+    `?estado=`:
+      - `activas` (default): los que aun trabaja (ni finalizados por el conductor
+        ni terminados por la oficina).
+      - `historial`: los que ya cerro (finalizados por el conductor o terminados).
+      - `todas`: sin filtrar por estado.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = DespachoMovilSerializer
     pagination_class = None
 
     def get_queryset(self):
-        return VerEntrega.objects.filter(
+        qs = VerEntrega.objects.filter(
             usuario_id=self.request.user.id,
         ).order_by('-fecha', '-id')
+        estado = self.request.query_params.get('estado', 'activas')
+        if estado == 'historial':
+            qs = qs.filter(Q(estado_finalizado_conductor=True) | Q(estado_terminado=True))
+        elif estado != 'todas':
+            qs = qs.filter(estado_finalizado_conductor=False, estado_terminado=False)
+        return qs
 
-    @extend_schema(tags=['despachos'])
+    @extend_schema(
+        tags=['despachos'],
+        parameters=[OpenApiParameter(
+            name='estado', type=str, required=False,
+            enum=['activas', 'historial', 'todas'],
+            description="Filtra por estado del viaje (default 'activas').",
+        )],
+    )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
@@ -240,3 +259,125 @@ class SoltarDespachoView(MovilApiMixin, APIView):
             except Exception:
                 pass
         return Response({'mensaje': 'Soltaste la orden'}, status=status.HTTP_200_OK)
+
+
+class DespachoIdRequestSerializer(serializers.Serializer):
+    """Body de finalizar/reabrir: el id (VerEntrega) de la orden."""
+    id = serializers.IntegerField(
+        min_value=1,
+        help_text='El id de la orden (VerEntrega.id).',
+    )
+
+
+def _mi_ver_entrega(request, ve_id):
+    """VerEntrega del usuario (scopeada por usuario_id). None si no es suya."""
+    return VerEntrega.objects.filter(pk=ve_id, usuario_id=request.user.id).first()
+
+
+class FinalizarDespachoView(MovilApiMixin, APIView):
+    """El CONDUCTOR finaliza su despacho cuando NO le quedan pendientes (toda guia
+    entregada o con novedad). Marca `estado_finalizado_conductor` en el RutDespacho
+    (tenant) y en la VerEntrega (public), para sacarlo de sus activas y mandarlo a
+    Historial. Es REVERSIBLE (reabrir) y NO crea RutTerminacion (eso es del admin).
+
+    Reusa `DespachoServicio.validar_terminacion` para la regla de "0 pendientes"
+    (misma validacion que el Terminar del admin). Patron tenant<->public identico
+    a soltar: el RutDespacho se lee/escribe DENTRO del schema_context; la VerEntrega
+    que lee el movil es la de public y se actualiza FUERA.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=['despachos'],
+        request=DespachoIdRequestSerializer,
+        responses={200: OpenApiResponse(description='Despacho finalizado')},
+        examples=[OpenApiExample('Finalizar', value={'id': 14163})],
+    )
+    def post(self, request, *args, **kwargs):
+        entrada = DespachoIdRequestSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        ve = _mi_ver_entrega(request, entrada.validated_data['id'])
+        if ve is None:
+            return Response(
+                {'codigo': 1, 'titulo': 'No encontrada',
+                 'mensaje': 'Esa orden no esta asignada a vos.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not (ve.schema_name and ve.despacho_id):
+            return Response(
+                {'codigo': 2, 'titulo': 'Orden sin despacho',
+                 'mensaje': 'Esta orden no tiene un despacho para finalizar.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        from django_tenants.utils import schema_context
+        from ruteo.models.despacho import RutDespacho
+        from ruteo.servicios.despacho import DespachoServicio
+        with schema_context(ve.schema_name):
+            despacho = RutDespacho.objects.filter(pk=ve.despacho_id).first()
+            if despacho is None:
+                return Response(
+                    {'codigo': 3, 'titulo': 'No encontrada',
+                     'mensaje': 'El despacho ya no existe.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            ok, mensaje = DespachoServicio.validar_terminacion(despacho)
+            if not ok:
+                # Codigo 14 = validacion de negocio (mismo que usa el back en 400s).
+                return Response(
+                    {'codigo': 14, 'titulo': 'Aun tienes pendientes', 'mensaje': mensaje},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if not despacho.estado_finalizado_conductor:
+                despacho.estado_finalizado_conductor = True
+                despacho.save(update_fields=['estado_finalizado_conductor'])
+        # Public: espejar la bandera a la VerEntrega que lee el Home.
+        if not ve.estado_finalizado_conductor:
+            ve.estado_finalizado_conductor = True
+            ve.save(update_fields=['estado_finalizado_conductor'])
+        return Response({'mensaje': 'Despacho finalizado'}, status=status.HTTP_200_OK)
+
+
+class ReabrirDespachoView(MovilApiMixin, APIView):
+    """El conductor REABRE un despacho que habia finalizado (vuelve de Historial a
+    activas), p.ej. porque soluciono una novedad y va a entregar. Revierte
+    `estado_finalizado_conductor` (tenant + public). NO se puede reabrir si el
+    admin ya lo TERMINO (definitivo): en ese caso queda en Historial.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=['despachos'],
+        request=DespachoIdRequestSerializer,
+        responses={200: OpenApiResponse(description='Despacho reabierto')},
+        examples=[OpenApiExample('Reabrir', value={'id': 14163})],
+    )
+    def post(self, request, *args, **kwargs):
+        entrada = DespachoIdRequestSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        ve = _mi_ver_entrega(request, entrada.validated_data['id'])
+        if ve is None:
+            return Response(
+                {'codigo': 1, 'titulo': 'No encontrada',
+                 'mensaje': 'Esa orden no esta asignada a vos.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if ve.estado_terminado:
+            return Response(
+                {'codigo': 4, 'titulo': 'Ya terminado',
+                 'mensaje': 'El despacho ya fue terminado por la oficina; no se puede reabrir.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if ve.schema_name and ve.despacho_id:
+            from django_tenants.utils import schema_context
+            from ruteo.models.despacho import RutDespacho
+            try:
+                with schema_context(ve.schema_name):
+                    RutDespacho.objects.filter(
+                        pk=ve.despacho_id, estado_terminado=False,
+                    ).update(estado_finalizado_conductor=False)
+            except Exception:
+                pass
+        if ve.estado_finalizado_conductor:
+            ve.estado_finalizado_conductor = False
+            ve.save(update_fields=['estado_finalizado_conductor'])
+        return Response({'mensaje': 'Despacho reabierto'}, status=status.HTTP_200_OK)
