@@ -22,6 +22,7 @@ def responder_consulta(consulta, opcion, comentario, movil_token, fecha, usuario
 
     with transaction.atomic():
         respuesta = RutSeguimiento.objects.create(
+            conductor_id=consulta.conductor_id,
             despacho_id=consulta.despacho_id,
             tipo=RutSeguimiento.TIPO_RESPUESTA,
             consulta=consulta,

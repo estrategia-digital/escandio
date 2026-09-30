@@ -22,6 +22,7 @@ from movil.serializers.seguimiento import (
 from movil.services.seguimiento import responder_consulta
 from movil.views.base import MovilApiMixin
 from ruteo.models.seguimiento import RutSeguimiento
+from ruteo.servicios.realtime import notificar_seguimiento
 
 
 class SeguimientoMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
@@ -36,15 +37,49 @@ class SeguimientoMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
     )
     @action(detail=False, methods=['get'], url_path='pendientes')
     def pendientes(self, request):
-        """Consultas pendientes de los despachos que conduce este usuario."""
         consultas = RutSeguimiento.objects.filter(
             tipo=RutSeguimiento.TIPO_CONSULTA,
             estado=RutSeguimiento.ESTADO_PENDIENTE,
-            despacho__conductor_id=request.user.id,
+            conductor_id=request.user.id,
         ).order_by('fecha_registro')
         return Response(
             ConsultaPendienteMovilSerializer(consultas, many=True).data,
         )
+
+    @extend_schema(tags=['seguimiento'])
+    @action(detail=False, methods=['get'], url_path='mi-conversacion')
+    def mi_conversacion(self, request):
+        mensajes = RutSeguimiento.objects.filter(
+            conductor_id=request.user.id,
+        ).order_by('fecha_registro').values(
+            'id', 'tipo', 'estado', 'comentario', 'opciones', 'opcion',
+            'es_conductor', 'fecha_registro',
+        )
+        return Response(list(mensajes))
+
+    @extend_schema(request=IdSerializer, responses={201: IdSerializer}, tags=['seguimiento'])
+    @action(detail=False, methods=['post'], url_path='mensaje')
+    def mensaje(self, request):
+        texto = (request.data.get('texto') or '').strip()
+        movil_token = request.data.get('movil_token')
+        if not (texto and movil_token):
+            return responses.error(
+                'Faltan parametros (texto, movil_token)',
+                responses.COD_PARAMETROS, 400, titulo='Datos invalidos',
+            )
+        existente = RutSeguimiento.objects.filter(movil_token=movil_token).first()
+        if existente:
+            return Response({'id': existente.id}, status=201)
+        mensaje = RutSeguimiento.objects.create(
+            conductor_id=request.user.id,
+            tipo=RutSeguimiento.TIPO_MENSAJE,
+            comentario=texto,
+            es_conductor=True,
+            usuario_id=request.user.id,
+            movil_token=movil_token,
+        )
+        notificar_seguimiento(request.tenant.schema_name, request.user.id)
+        return Response({'id': mensaje.id}, status=201)
 
     @extend_schema(
         request=ResponderConsultaRequestSerializer,
@@ -82,7 +117,7 @@ class SeguimientoMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
 
         consulta = RutSeguimiento.objects.filter(
             pk=pk, tipo=RutSeguimiento.TIPO_CONSULTA,
-            despacho__conductor_id=request.user.id,
+            conductor_id=request.user.id,
         ).first()
         if consulta is None:
             return responses.error(
@@ -98,4 +133,5 @@ class SeguimientoMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
             fecha=fecha,
             usuario_id=request.user.id,
         )
+        notificar_seguimiento(request.tenant.schema_name, request.user.id)
         return Response({'id': respuesta.id}, status=201)

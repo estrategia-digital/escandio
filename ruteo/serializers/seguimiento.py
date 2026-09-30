@@ -9,8 +9,8 @@ class RutSeguimientoSerializador(_ConductorNombreMixin, serializers.ModelSeriali
         # movil_token NO se expone (es interno de idempotencia).
         fields = [
             'id', 'fecha_registro', 'comentario', 'despacho', 'usuario_id',
-            'tipo', 'estado', 'origen', 'opciones', 'opcion', 'consulta',
-            'es_conductor',
+            'conductor_id', 'tipo', 'estado', 'origen', 'opciones', 'opcion',
+            'consulta', 'es_conductor', 'leido',
         ]
 
     def to_representation(self, instance):

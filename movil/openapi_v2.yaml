@@ -204,11 +204,8 @@ paths:
     get:
       operationId: despachos_list
       description: |-
-        Lista los despachos asignados al conductor autenticado.
-
-        Filtra VerEntrega por usuario_id == request.user.id, ordenados por fecha
-        descendente. Devuelve un array plano (sin paginar): un conductor maneja
-        pocos despachos vigentes a la vez, no vale la pena paginar.
+        Lista los despachos asignados al conductor autenticado. Sin paginar
+        (un conductor maneja pocos despachos vigentes a la vez).
 
         `?estado=`:
           - `activas` (default): los que aun trabaja (ni finalizados por el conductor
@@ -270,13 +267,12 @@ paths:
       description: |-
         El CONDUCTOR finaliza su despacho cuando NO le quedan pendientes (toda guia
         entregada o con novedad). Marca `estado_finalizado_conductor` en el RutDespacho
-        (tenant) y en la VerEntrega (public), para sacarlo de sus activas y mandarlo a
-        Historial. Es REVERSIBLE (reabrir) y NO crea RutTerminacion (eso es del admin).
+        (tenant) y en la VerEntrega (public). Es REVERSIBLE (reabrir) y NO crea
+        RutTerminacion (eso es del admin).
 
-        Reusa `DespachoServicio.validar_terminacion` para la regla de "0 pendientes"
-        (misma validacion que el Terminar del admin). Patron tenant<->public identico
-        a soltar: el RutDespacho se lee/escribe DENTRO del schema_context; la VerEntrega
-        que lee el movil es la de public y se actualiza FUERA.
+        Reusa `DespachoServicio.validar_terminacion` (misma regla de "0 pendientes"
+        que el Terminar del admin). RutDespacho se lee/escribe DENTRO del
+        schema_context; la VerEntrega de public se actualiza FUERA.
       tags:
       - despachos
       requestBody:
@@ -339,8 +335,7 @@ paths:
 
         Limpia `usuario_id` de SU VerEntrega (public) y, best-effort, el `conductor_id`
         del RutDespacho (tenant). Scopeado por `usuario_id`: solo puede soltar lo que
-        tiene asignado (no toca lo de otros). Resuelve el caso de ordenes huerfanas /
-        vacias que no tienen despacho en Trafico y por eso no se podian desasignar.
+        tiene asignado.
       tags:
       - despachos
       requestBody:
@@ -369,20 +364,14 @@ paths:
     post:
       operationId: despachos_tomar_create
       description: |-
-        El conductor TOMA una orden por su OE (self-service).
+        El conductor TOMA una orden por su OE (self-service): auto-asignarse.
+        Busca el RutDespacho por `entrega_id == oe` en el/los schema(s) del contenedor,
+        setea `conductor_id` y propaga `usuario_id` a la VerEntrega PUBLICA para que
+        la orden aparezca en "Mis Ordenes" en todos los dispositivos del conductor.
 
-        Reemplaza al viejo "cargar por codigo" (que solo leia y guardaba local en el
-        dispositivo). Aca, tomar = auto-asignarse: se busca el RutDespacho por
-        `entrega_id == oe` en el/los schema(s) del/los contenedor(es) del usuario, se
-        setea `conductor_id`, se registra quien la cargo (`cargado_por_id`/`cargado_en`,
-        una sola vez) y se propaga `usuario_id` a la VerEntrega PUBLICA para que la
-        orden aparezca en "Mis Ordenes" en TODOS los dispositivos del conductor al
-        refrescar (no solo en el que la cargo).
-
-        OJO tenant/public: `RutDespacho` es tenant-only (se lee/escribe DENTRO del
-        schema_context). `VerEntrega` existe en public Y en cada tenant; el movil lee
-        la de PUBLIC, asi que su update va FUERA del schema_context (en el dominio
-        base, donde corre esta vista).
+        OJO tenant/public: `RutDespacho` es tenant-only (DENTRO del schema_context).
+        `VerEntrega` existe en public Y en cada tenant; el movil lee la de PUBLIC,
+        asi que su update va FUERA del schema_context.
       tags:
       - despachos
       requestBody:
@@ -532,10 +521,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/Id'
           description: ''
+  /api/v2/seguimiento/mensaje/:
+    post:
+      operationId: seguimiento_mensaje_create
+      description: Consultas de seguimiento dirigidas al conductor.
+      tags:
+      - seguimiento
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/IdRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/IdRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Id'
+          description: ''
+  /api/v2/seguimiento/mi-conversacion/:
+    get:
+      operationId: seguimiento_mi_conversacion_retrieve
+      description: Consultas de seguimiento dirigidas al conductor.
+      tags:
+      - seguimiento
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultaPendienteMovil'
+          description: ''
   /api/v2/seguimiento/pendientes/:
     get:
       operationId: seguimiento_pendientes_list
-      description: Consultas pendientes de los despachos que conduce este usuario.
+      description: Consultas de seguimiento dirigidas al conductor.
       parameters:
       - name: page
         required: false
@@ -1031,6 +1062,13 @@ components:
       required:
       - fecha_entrega
     Id:
+      type: object
+      properties:
+        id:
+          type: integer
+      required:
+      - id
+    IdRequest:
       type: object
       properties:
         id:

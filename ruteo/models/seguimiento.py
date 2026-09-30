@@ -24,11 +24,15 @@ class RutSeguimiento(models.Model):
     TIPO_RESPUESTA = 'respuesta'
     TIPO_LLAMADA = 'llamada'
     TIPO_NOTA = 'nota'
+    TIPO_MENSAJE = 'mensaje'
+    TIPO_NOVEDAD = 'novedad'
     TIPOS = [
         (TIPO_CONSULTA, 'Consulta'),
         (TIPO_RESPUESTA, 'Respuesta'),
         (TIPO_LLAMADA, 'Llamada'),
         (TIPO_NOTA, 'Nota'),
+        (TIPO_MENSAJE, 'Mensaje'),
+        (TIPO_NOVEDAD, 'Novedad'),
     ]
 
     ESTADO_PENDIENTE = 'pendiente'
@@ -49,11 +53,16 @@ class RutSeguimiento(models.Model):
 
     fecha_registro = models.DateTimeField(auto_now_add=True)
     usuario_id = models.IntegerField(null=True)
+    # Conductor dueño del hilo (id plano a contenedor.User). El chat/check-in se
+    # agrupa por este campo, no por despacho (un conductor lleva varias órdenes).
+    # Distinto de usuario_id (autor del mensaje).
+    conductor_id = models.IntegerField(null=True, db_index=True)
     comentario = models.CharField(max_length=500, null=True)
     despacho = models.ForeignKey(
         RutDespacho, null=True, on_delete=models.PROTECT,
         related_name='seguimientos_despacho_rel',
     )
+    leido = models.BooleanField(default=False)
     # --- Timeline / check-in ---
     tipo = models.CharField(max_length=20, choices=TIPOS, default=TIPO_NOTA)
     estado = models.CharField(max_length=20, choices=ESTADOS, null=True, blank=True)

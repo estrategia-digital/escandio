@@ -81,12 +81,14 @@ TENANT_APPS = (
 )
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'rest_framework',
     'drf_spectacular',
     'django_tenants',
@@ -132,6 +134,20 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'escandioapp.wsgi.application'
+ASGI_APPLICATION = 'escandioapp.asgi.application'
+
+_REDIS_URL = config('REDIS_URL', default='')
+if _REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [_REDIS_URL]},
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
+    }
 
 
 # Database
