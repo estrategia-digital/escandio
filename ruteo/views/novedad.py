@@ -79,8 +79,9 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
             if novedad.estado_solucion == False:                
                 with transaction.atomic():
                     novedad.estado_solucion = True
-                    novedad.fecha_solucion = timezone.now() 
+                    novedad.fecha_solucion = timezone.now()
                     novedad.solucion = solucion
+                    novedad.solucionado_por_id = request.user.id
                     novedad.save()
                     # .first() en vez de get(): una novedad huerfana (visita
                     # borrada) no debe dar 500; se marca resuelta igual.

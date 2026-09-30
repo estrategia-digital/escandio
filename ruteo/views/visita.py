@@ -72,11 +72,8 @@ import threading
 logger = logging.getLogger(__name__)
 
 class VisitaPaginacion(PageNumberPagination):
-    """Permite ?page_size=N (default 30, tope 5000) para traer todas las visitas
-    de un despacho en una pagina — el modal de tráfico calcula los KPIs sobre la
-    lista cargada, asi que necesita el set completo. Sin esto el endpoint usa
-    PageNumberPagination (que IGNORA ?limit) y siempre pagina de a 30 -> los KPIs
-    quedaban parciales (Total 30 vs Registros 58)."""
+    """Permite ?page_size=N (default 30, tope 5000): PageNumberPagination ignora
+    ?limit, y el modal de tráfico necesita el set completo para calcular los KPIs."""
     page_size_query_param = 'page_size'
     max_page_size = 5000
 
@@ -99,18 +96,16 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     LIMITE_LOTE_COMPLEMENTO = ComplementoServicio.LIMITE_LOTE
     LIMITE_INTENTOS_COMPLEMENTO = ComplementoServicio.LIMITE_INTENTOS
     # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
-    # 'list', 'retrieve' y 'entrega_action' DEBEN permanecer aqui. La app movil
-    # v1.6.4 publicada los consume y no se puede actualizar. Quitarlos rompe la
-    # app. OJO: el nombre que matchea contra self.action en RolMixin es el
-    # nombre del metodo, NO el url_path. POST /ruteo/visita/entrega/ se enruta
-    # al metodo `entrega_action`, asi que la accion se llama 'entrega_action'.
+    # 'list', 'retrieve' y 'entrega_action' DEBEN permanecer aqui: la app movil
+    # v1.6.4 publicada los consume y no se puede actualizar. OJO: esto matchea
+    # contra self.action en RolMixin, que es el nombre del METODO, no el
+    # url_path (POST /ruteo/visita/entrega/ -> metodo `entrega_action`).
     acciones_publicas = [
         'list',
         'retrieve',
         'entrega_action',
     ]
-    # Imprimir rótulos no muta nada: basta permiso de VER en visita para que
-    # los roles de tráfico puedan imprimir desde su módulo.
+    # Imprimir rótulos no muta nada: basta permiso de VER en visita.
     acciones_lectura = [
         'imprimir_rotulo',
         'sin_despachar',
@@ -155,9 +150,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     if u:
                         conductor_nombre = f"{u['nombre'] or ''} {u['apellido'] or ''}".strip() or None
                 respuesta.data['conductor_nombre'] = conductor_nombre
-        # Quien ENTREGO esta guia (self-service / multi-conductor colaborativo).
-        # Puede diferir del conductor del despacho: en un despacho compartido cada
-        # guia la entrega quien la hizo.
+        # Quien ENTREGO esta guia puede diferir del conductor del despacho
+        # (self-service / multi-conductor colaborativo).
         entregado_por_id = RutVisita.objects.filter(
             pk=respuesta.data.get('id'),
         ).values_list('entregado_por_id', flat=True).first()
@@ -184,9 +178,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
             if request.query_params.get('excel'):
-                # Informe "Entregas por despacho": Excel LIMPIO con solo las
-                # columnas del informe (el serializer ya devuelve los títulos como
-                # llaves y los tipos van como texto legible).
                 if request.query_params.get('serializador') == 'entrega_despacho':
                     plantilla = ExcelPlantilla('Entregas por despacho')
                     plantilla.agregar_hoja_datos(
@@ -194,7 +185,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                         tipos={'Número': 'entero', 'Despacho': 'entero'},
                     )
                     return plantilla.respuesta('entregas_por_despacho.xlsx')
-                # Export estándar de visitas (todas las columnas).
                 plantilla = ExcelPlantilla('Visitas')
                 plantilla.agregar_hoja_datos(
                     'Visitas', list(serializer.data),
@@ -222,16 +212,11 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho.tiempo_servicio = despacho.tiempo_servicio - visita.tiempo_servicio
                     despacho.tiempo_trayecto = despacho.tiempo_trayecto - visita.tiempo_trayecto
                     despacho.save()
-        # NOTA: hubo un candado que bloqueaba el borrado individual si la visita
-        # tenia despacho_anterior seteado (posibles novedades offline). Se QUITO:
-        # bloqueaba la limpieza legitima del pool de Rutear (guias que vuelven de
-        # una orden anulada), y su motivo era una hipotesis equivocada (el
-        # incidente real de novedades pegadas era descripcion="", no visitas
-        # borradas). El borrado individual es deliberado; la proteccion real vive
-        # en `anular` (bloquea con conductor) + el hardening del sync offline
-        # (UI honesta, reporte a Sentry, fix multipart/401). El `eliminar_todos`
-        # SI sigue scoped (masivo es peligroso, sobre todo sin complemento).
-        # El contador de visitas lo repone la señal de RutVisita (post_delete).
+        # El borrado individual es deliberado (sin candado por despacho_anterior,
+        # necesario para la limpieza del pool de Rutear); la proteccion real vive
+        # en `anular` (bloquea con conductor) y en el hardening del sync offline.
+        # `eliminar_todos` si sigue scoped. El contador de visitas lo repone la
+        # señal de RutVisita (post_delete).
         self.perform_destroy(visita)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -304,10 +289,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         raw = request.data
         archivo_base64 = raw.get('archivo_base64')
         if archivo_base64:
-            # base64 corrupto -> binascii.Error; archivo que no es .xlsx (un
-            # .csv/.xls/pdf o zip dañado) -> BadZipFile/InvalidFileException.
-            # Sin este try, subir el archivo equivocado daba 500 opaco. Mismo
-            # manejo que vehiculo.importar y franja.importar.
+            # base64 corrupto o archivo no-.xlsx -> excepcion generica; sin este
+            # try daba 500 opaco (mismo manejo que vehiculo.importar y franja.importar).
             try:
                 archivo_data = base64.b64decode(archivo_base64)
                 archivo = BytesIO(archivo_data)
@@ -479,11 +462,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if respuesta['error'] == False:
             cantidad = respuesta['cantidad']
             visitas = respuesta['visitas_creadas']
-            # ubicar (franja por visita) + ordenar (solver OR-tools) pueden tardar
-            # segundos con muchas visitas -> riesgo de timeout del gateway (504).
-            # Se corren en un hilo daemon (mismo patron que NotificacionServicio),
-            # con el schema del tenant seteado DENTRO del hilo. El import responde
-            # ya; el orden aparece en el siguiente refresh. Falla aislada+logueada.
+            # ubicar+ordenar pueden tardar segundos -> riesgo de timeout del
+            # gateway (504); se corren en un hilo daemon (patron de
+            # NotificacionServicio), con el schema del tenant seteado DENTRO del
+            # hilo. El import responde ya; el orden aparece en el siguiente refresh.
             _schema = connection.schema_name
             _ids = [v.id for v in visitas]
 
@@ -508,8 +490,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             errores_guia = respuesta.get('errores_guia', 0)
             duplicadas = respuesta.get('duplicadas', 0)
             mensaje = f'Se importaron {cantidad} guias con exito'
-            # duplicadas: sin esto un "Se importaron 0" no explicaba POR QUE (todas
-            # ya estaban en Ruteo) y el operador quedaba confundido.
             if duplicadas:
                 mensaje += f', {duplicadas} ya estaban en Ruteo (no se re-agregaron)'
             if descartadas:
@@ -518,8 +498,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 mensaje += f', {sin_ubicar} sin geocodificar (revise la direccion para asignarles zona)'
             if errores_guia:
                 mensaje += f', {errores_guia} omitidas por datos invalidos'
-            # Devolvemos los conteos para que el front distinga exito TOTAL de
-            # parcial (mostrar warning si hubo descartes/omitidas/duplicadas).
             return Response({
                 'mensaje': mensaje,
                 'cantidad': cantidad,
@@ -605,13 +583,9 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     def sin_despachar(self, request):
         """Alerta: guías en el pool, LISTAS para rutear pero SIN despachar.
 
-        Causa del "faltan entregas": una guía que se importa DESPUÉS de correr
-        rutear (o de que la ruta ya salió) queda decodificada y lista, pero sin
-        asignar a ningún despacho y sin ninguna alerta → el conductor nunca la
-        ve. Este endpoint las saca a la luz para que el office las rutee.
-
-        `nunca asignada` (despacho_anterior_id null) distingue el leak del import
-        de una guía que se soltó/anuló a propósito. Read-only.
+        Detecta guías decodificadas y listas pero sin despacho asignado (p. ej.
+        importadas después de correr rutear). `despacho_anterior_id null`
+        distingue esto de una guía soltada/anulada a propósito. Read-only.
         """
         from collections import defaultdict
         base = RutVisita.objects.filter(
@@ -808,7 +782,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                             visita.despacho = despacho
                             visitas_asignadas.append(visita)
                             visitas_pendientes.remove(visita)
-                            # Limpiar rechazo previo si fue asignada
                             rechazos.pop(visita.numero, None)
 
                     if despacho and despacho.pk:
@@ -915,14 +888,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
     def eliminar_todos(self, request):             
         raw = request.data
         estado_decodificado = raw.get('estado_decodificado', None)
-        # Limpia TODO el pool (incluidas las guias que volvieron de un despacho
-        # anulado). Hubo un candado que protegia las ex-despacho (despacho_anterior)
-        # de este borrado masivo; se QUITO porque rompia el flujo real de la oficina
-        # ("Eliminar todas" no limpiaba y las guias quedaban pegadas). Es una accion
-        # deliberada con confirmacion; la proteccion real vive en `anular` (con
-        # conductor) + el hardening del sync offline. OJO: en contenedores sin
-        # complemento este borrado es PERMANENTE (no hay de donde re-importar) — el
-        # aviso en la web lo advierte.
+        # Limpia TODO el pool, incluidas las guias que volvieron de un despacho
+        # anulado (sin candado por despacho_anterior); la proteccion real vive en
+        # `anular` (con conductor) + el hardening del sync offline. OJO: en
+        # contenedores sin complemento este borrado es PERMANENTE.
         if estado_decodificado == False:
             RutVisita.objects.filter(estado_decodificado=False).delete()
         else:
@@ -1252,95 +1221,59 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                     return Response({'mensaje':'La fecha de entrega no puede ser mayor a la fecha actual', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
             except ValueError:
                 return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
-            # Se resuelven despues del commit (fuera del lock): si el complemento
-            # esta habilitado y los datos que necesita.
             sincronizar_complemento = False
             datos_entrega = None
             try:
                 with transaction.atomic():
-                    # Lock de fila (select_for_update): serializa los reenvios
-                    # CONCURRENTES del auto-sync sobre la MISMA visita. Si un
-                    # segundo POST llega mientras el primero sigue dentro de la
-                    # transaccion (p.ej. todavia subiendo a Backblaze), espera
-                    # aqui hasta el commit del primero, lee estado_entregado=True
-                    # y cae en la rama "ya estaba entregada" sin duplicar
-                    # registro, archivos, contador ni notificacion. El lock es
-                    # POR FILA (pk): NO bloquea entregas de visitas distintas.
-                    # El reenvio SECUENCIAL (respuesta perdida) ya era idempotente
-                    # por el chequeo de estado_entregado; esto cierra el hueco del
-                    # solape concurrente que el auto-sync hace mas probable.
+                    # Lock POR FILA (pk): serializa reenvios concurrentes del
+                    # auto-sync sobre la misma visita para no duplicar registro,
+                    # archivos, contador ni notificacion; no bloquea otras visitas.
                     visita = RutVisita.objects.select_for_update().filter(pk=id).first()
                     if visita is None:
-                        # El id se movió: la guía se re-importó (id nuevo) o se
-                        # borró la copia vieja, pero la evidencia offline apunta
-                        # al id viejo. Se resuelve por NÚMERO (estable): primero
-                        # la guía abierta del conductor, luego cualquier abierta.
+                        # El id se movió (re-import / borrado de la copia vieja);
+                        # se resuelve por NÚMERO, que es estable.
                         visita = VisitaServicio.resolver_por_numero(
                             numero, request.user.id, con_lock=True,
                         )
                     if visita is None:
-                        # Sin visita por id NI por número abierto: si el número
-                        # existe pero YA está entregada (la copia buena se cerró),
-                        # es idempotente (éxito), no un error que reintente en
-                        # bucle. Solo es "no existe" si el número no aparece.
+                        # Si el número existe pero ya está entregada, es idempotente
+                        # (éxito), no un error que reintente en bucle.
                         if numero and RutVisita.objects.filter(numero=numero).exists():
                             return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
                         return Response({'mensaje': 'La visita no existe', 'codigo': 15}, status=status.HTTP_400_BAD_REQUEST)
-                    # A partir de acá se usa el id REAL resuelto (evidencias,
-                    # contadores, nombres de archivo), no el id viejo del request.
+                    # A partir de acá se usa el id REAL resuelto, no el del request.
                     id = visita.id
 
                     if visita.despacho_id is None:
-                        # Visita detachada de su despacho (admin libero/anulo/retiro/
-                        # destroyo o rutear cleanup) mientras berkelio v1.6.4 (congelada)
-                        # la tenia cacheada. Manejamos dos casos:
-                        #   1. Si hay rastro (despacho_anterior_id) la re-vinculamos al
-                        #      despacho original.
-                        #   2. Si no hay rastro (visitas legacy detachadas antes del
-                        #      deploy de este fix), dejamos que la entrega proceda
-                        #      igual: mejor registrar la entrega huérfana que dejar
-                        #      al conductor en error 400 sin salida. El counter del
-                        #      despacho se vuelve no-op (filter pk=None).
+                        # Visita detachada de su despacho mientras berkelio v1.6.4
+                        # (congelada) la tenia cacheada: si hay rastro
+                        # (despacho_anterior_id) se re-vincula; si no, la entrega
+                        # procede huérfana (mejor eso que un 400 sin salida para
+                        # el conductor). El contador del despacho queda no-op.
                         if visita.despacho_anterior_id is not None:
                             visita.despacho_id = visita.despacho_anterior_id
                             visita.estado_despacho = True
                             visita.despacho_anterior = None
                             visita.save()
 
-                    # El chequeo de idempotencia va BAJO el lock: es lo que vuelve
-                    # seguro al reenvio concurrente.
+                    # El chequeo de idempotencia va BAJO el lock.
                     entrega_nueva = visita.estado_entregado == False
                     if entrega_nueva:
                         datos_entrega = UtilidadGeneral.json_texto(datos_adicionales)
                         visita.estado_entregado = True
                         visita.fecha_entrega = fecha_entrega
                         visita.datos_entrega = datos_entrega
-                        # Quien ENTREGO: usuario autenticado del token movil. La app
-                        # congelada (v1.6.4) no manda nada nuevo; el server lo deduce
-                        # del token, asi que el contrato NO cambia. Habilita "quien
-                        # entrego cada guia" en los informes (la v2 ya lo seteaba;
-                        # esta era la ruta legacy que lo dejaba en null). AnonymousUser
-                        # -> id None -> no se setea.
+                        # Usuario del token movil; la app congelada (v1.6.4) no
+                        # manda nada nuevo, el server lo deduce del token.
                         if getattr(request.user, 'id', None):
                             visita.entregado_por_id = request.user.id
                         # El contador visitas_entregadas lo repone la señal de RutVisita.
                         visita.save()
-                        # Las evidencias (fotos/firmas) se suben a Backblaze DESPUES
-                        # del commit (fuera del lock). Sostener esa subida externa
-                        # dentro de la transaccion dejaba la conexion idle-in-
-                        # transaction hasta que se cerraba -> InterfaceError
-                        # "connection already closed" al INSERT del gen_archivo;
-                        # ademas, un fallo de subida tumbaba la entrega entera.
-                        # Solo LEEMOS aqui si el complemento esta habilitado. La
-                        # sincronizacion real (POST HTTP externo de hasta 30s) se
-                        # hace DESPUES del commit, fuera del lock de fila. Antes
-                        # vivia aqui dentro: sostener el lock + la transaccion
-                        # durante esa llamada externa hacia que, si el complemento
-                        # estaba lento/caido, el gateway cortara la peticion ->
-                        # rollback -> el movil reintentaba en bucle y la entrega
-                        # (ya lista) nunca se confirmaba ("Servidor fuera de linea").
-                        # .first() en vez de [0] para no reventar con IndexError si
-                        # no existe la fila de configuracion.
+                        # Evidencias y sincronizacion con el complemento se hacen
+                        # DESPUES del commit y fuera del lock: sostenerlas aqui
+                        # dejaba la conexion idle-in-transaction (InterfaceError) y,
+                        # si el complemento estaba lento, el gateway cortaba la
+                        # peticion -> rollback -> reintento en bucle del movil.
                         configuracion = GenConfiguracion.objects.filter(pk=1).values('rut_sincronizar_complemento').first()
                         sincronizar_complemento = bool(configuracion and configuracion['rut_sincronizar_complemento'])
             except RutVisita.DoesNotExist:
@@ -1349,12 +1282,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
             if not entrega_nueva:
                 return Response({'mensaje': 'La visita ya estaba entregada'}, status=status.HTTP_200_OK)
 
-            # --- Fuera de la transaccion (ya hubo commit): la entrega quedo
-            # registrada de forma durable. Lo de abajo es best-effort y su fallo
-            # NO debe tumbar (500) la entrega ni sostener el lock. ---
-            # Subida de evidencias (fotos/firmas) a Backblaze. Best-effort: si la
-            # subida o el INSERT fallan, la entrega ya quedo confirmada; se registra
-            # en el log y no se responde 500.
+            # Fuera de la transaccion (ya hubo commit): lo de abajo es best-effort,
+            # su fallo no debe tumbar (500) la entrega ya confirmada.
             try:
                 backblaze = Backblaze()
                 tenant = request.tenant.schema_name
@@ -1468,8 +1397,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         """Notifica al destinatario que el conductor llega en X minutos.
 
         Payload: { id: int, minutos: int }. Retorna {'enviado', 'razon', 'mensaje'}.
-        Pensado para que la app móvil del conductor o un operador lo dispare
-        cuando el vehículo está cerca del destinatario (geocerca, ETA, etc.).
         """
         raw = request.data
         id = raw.get('id')
@@ -1493,11 +1420,10 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path=r'reprogramar',)
     def reprogramar(self, request):
-        """Reprograma una visita y notifica al destinatario con la plantilla 'reagendar'.
+        """Reprograma una visita y notifica al destinatario (plantilla 'reagendar').
 
         Payload: { id: int, fecha: 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM',
-                   cita_inicio?, cita_fin? }. Actualiza la fecha/cita en BD y
-        manda WhatsApp con la nueva fecha en formato humano.
+                   cita_inicio?, cita_fin? }.
         """
         raw = request.data
         id = raw.get('id')
@@ -1524,7 +1450,6 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
         if fecha_nueva is None:
             return Response({'mensaje':'Formato de fecha inválido. Use YYYY-MM-DD o YYYY-MM-DD HH:MM', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Persistir cambios.
         visita.fecha = fecha_nueva.date()
         if cita_inicio_param:
             try:
@@ -1577,6 +1502,8 @@ class RutVisitaViewSet(RolMixin, viewsets.ModelViewSet):
                 visita.despacho_anterior_id = visita.despacho_id
                 visita.estado_despacho = False
                 visita.despacho = None
+                visita.liberado_por_id = request.user.id
+                visita.fecha_liberado = timezone.now()
                 # visitas y visitas_novedad los repone la señal de RutVisita.
                 visita.save()
                 return Response({'mensaje': f'Se libero con exito'}, status=status.HTTP_200_OK)

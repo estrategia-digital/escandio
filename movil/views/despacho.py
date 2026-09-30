@@ -24,12 +24,8 @@ class DespachoMovilView(MovilApiMixin, generics.RetrieveAPIView):
     queryset = VerEntrega.objects.all()
 
     def get_queryset(self):
-        # Scope del despacho que puede resolver el usuario:
-        # - admin del contenedor / coordinador movil -> todos los despachos
-        #   del contenedor.
-        # - conductor -> solo los asignados a el (VerEntrega.usuario_id) o aun
-        #   sin asignar (usuario_id NULL): no rompe despachos/datos previos.
-        # Un despacho fuera del scope -> 404.
+        # Admin/coordinador ve todo el contenedor; conductor solo lo asignado a el
+        # o aun sin asignar. Fuera de scope -> 404.
         user = self.request.user
         if user.is_superuser:
             return VerEntrega.objects.all()
@@ -63,11 +59,8 @@ class DespachoMovilView(MovilApiMixin, generics.RetrieveAPIView):
 
 
 class DespachosMiasView(MovilApiMixin, generics.ListAPIView):
-    """Lista los despachos asignados al conductor autenticado.
-
-    Filtra VerEntrega por usuario_id == request.user.id, ordenados por fecha
-    descendente. Devuelve un array plano (sin paginar): un conductor maneja
-    pocos despachos vigentes a la vez, no vale la pena paginar.
+    """Lista los despachos asignados al conductor autenticado. Sin paginar
+    (un conductor maneja pocos despachos vigentes a la vez).
 
     `?estado=`:
       - `activas` (default): los que aun trabaja (ni finalizados por el conductor
@@ -111,20 +104,14 @@ class TomarDespachoRequestSerializer(serializers.Serializer):
 
 
 class TomarDespachoView(MovilApiMixin, APIView):
-    """El conductor TOMA una orden por su OE (self-service).
+    """El conductor TOMA una orden por su OE (self-service): auto-asignarse.
+    Busca el RutDespacho por `entrega_id == oe` en el/los schema(s) del contenedor,
+    setea `conductor_id` y propaga `usuario_id` a la VerEntrega PUBLICA para que
+    la orden aparezca en "Mis Ordenes" en todos los dispositivos del conductor.
 
-    Reemplaza al viejo "cargar por codigo" (que solo leia y guardaba local en el
-    dispositivo). Aca, tomar = auto-asignarse: se busca el RutDespacho por
-    `entrega_id == oe` en el/los schema(s) del/los contenedor(es) del usuario, se
-    setea `conductor_id`, se registra quien la cargo (`cargado_por_id`/`cargado_en`,
-    una sola vez) y se propaga `usuario_id` a la VerEntrega PUBLICA para que la
-    orden aparezca en "Mis Ordenes" en TODOS los dispositivos del conductor al
-    refrescar (no solo en el que la cargo).
-
-    OJO tenant/public: `RutDespacho` es tenant-only (se lee/escribe DENTRO del
-    schema_context). `VerEntrega` existe en public Y en cada tenant; el movil lee
-    la de PUBLIC, asi que su update va FUERA del schema_context (en el dominio
-    base, donde corre esta vista).
+    OJO tenant/public: `RutDespacho` es tenant-only (DENTRO del schema_context).
+    `VerEntrega` existe en public Y en cada tenant; el movil lee la de PUBLIC,
+    asi que su update va FUERA del schema_context.
     """
     permission_classes = [IsAuthenticated]
 
@@ -138,14 +125,13 @@ class TomarDespachoView(MovilApiMixin, APIView):
         from django_tenants.utils import schema_context
         from contenedor.models import Contenedor, UsuarioContenedor
         from ruteo.models.despacho import RutDespacho
+        from ruteo.models.despacho_evento import RutDespachoEvento
+        from ruteo.servicios.evento import registrar_evento
 
         entrada = TomarDespachoRequestSerializer(data=request.data)
         entrada.is_valid(raise_exception=True)
         oe = entrada.validated_data['oe']
 
-        # Contenedores del usuario con acceso movil (donde puede tomar ordenes).
-        # Un superuser podria no tener membresias; en la practica los conductores
-        # si las tienen. Se recorre cada schema buscando el OE.
         contenedor_ids = list(
             UsuarioContenedor.objects.filter(
                 usuario_id=request.user.id, tiene_acceso_movil=True,
@@ -156,8 +142,6 @@ class TomarDespachoView(MovilApiMixin, APIView):
             .values_list('schema_name', flat=True)
         )
 
-        # Fase tenant: hallar el despacho por OE y auto-asignarlo. Se guarda
-        # (schema, despacho_id) para actualizar la VerEntrega publica despues.
         encontrado = None  # (schema_name, despacho_id)
         for schema_name in schemas:
             with schema_context(schema_name):
@@ -175,6 +159,7 @@ class TomarDespachoView(MovilApiMixin, APIView):
                     despacho.cargado_en = timezone.now()
                     campos += ['cargado_por_id', 'cargado_en']
                 despacho.save(update_fields=campos)
+                registrar_evento(despacho.id, RutDespachoEvento.TIPO_TOMADO, request.user.id)
                 encontrado = (schema_name, despacho.id)
                 break
 
@@ -185,7 +170,6 @@ class TomarDespachoView(MovilApiMixin, APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Fase public: propagar a la VerEntrega cross-tenant que lee el movil.
         schema_name, despacho_id = encontrado
         ve = VerEntrega.objects.filter(
             despacho_id=despacho_id, schema_name=schema_name,
@@ -216,8 +200,7 @@ class SoltarDespachoView(MovilApiMixin, APIView):
 
     Limpia `usuario_id` de SU VerEntrega (public) y, best-effort, el `conductor_id`
     del RutDespacho (tenant). Scopeado por `usuario_id`: solo puede soltar lo que
-    tiene asignado (no toca lo de otros). Resuelve el caso de ordenes huerfanas /
-    vacias que no tienen despacho en Trafico y por eso no se podian desasignar.
+    tiene asignado.
     """
     permission_classes = [IsAuthenticated]
 
@@ -245,17 +228,20 @@ class SoltarDespachoView(MovilApiMixin, APIView):
         despacho_id = ve.despacho_id
         ve.usuario_id = None
         ve.save(update_fields=['usuario_id'])
-        # Best-effort: limpiar tambien el conductor en el tenant (si el despacho
-        # existe). Fail-silent: la orden ya se solto de Mis Ordenes (lo que ve el
-        # conductor); si el despacho es huerfano/inexistente, no pasa nada.
+        # Best-effort y fail-silent: la orden ya se solto de Mis Ordenes aunque el
+        # despacho sea huerfano/inexistente en el tenant.
         if schema_name and despacho_id:
             from django_tenants.utils import schema_context
             from ruteo.models.despacho import RutDespacho
+            from ruteo.models.despacho_evento import RutDespachoEvento
+            from ruteo.servicios.evento import registrar_evento
             try:
                 with schema_context(schema_name):
-                    RutDespacho.objects.filter(
+                    n = RutDespacho.objects.filter(
                         pk=despacho_id, conductor_id=request.user.id,
                     ).update(conductor_id=None)
+                    if n:
+                        registrar_evento(despacho_id, RutDespachoEvento.TIPO_SOLTADO, request.user.id)
             except Exception:
                 pass
         return Response({'mensaje': 'Soltaste la orden'}, status=status.HTTP_200_OK)
@@ -277,13 +263,12 @@ def _mi_ver_entrega(request, ve_id):
 class FinalizarDespachoView(MovilApiMixin, APIView):
     """El CONDUCTOR finaliza su despacho cuando NO le quedan pendientes (toda guia
     entregada o con novedad). Marca `estado_finalizado_conductor` en el RutDespacho
-    (tenant) y en la VerEntrega (public), para sacarlo de sus activas y mandarlo a
-    Historial. Es REVERSIBLE (reabrir) y NO crea RutTerminacion (eso es del admin).
+    (tenant) y en la VerEntrega (public). Es REVERSIBLE (reabrir) y NO crea
+    RutTerminacion (eso es del admin).
 
-    Reusa `DespachoServicio.validar_terminacion` para la regla de "0 pendientes"
-    (misma validacion que el Terminar del admin). Patron tenant<->public identico
-    a soltar: el RutDespacho se lee/escribe DENTRO del schema_context; la VerEntrega
-    que lee el movil es la de public y se actualiza FUERA.
+    Reusa `DespachoServicio.validar_terminacion` (misma regla de "0 pendientes"
+    que el Terminar del admin). RutDespacho se lee/escribe DENTRO del
+    schema_context; la VerEntrega de public se actualiza FUERA.
     """
     permission_classes = [IsAuthenticated]
 
@@ -311,7 +296,9 @@ class FinalizarDespachoView(MovilApiMixin, APIView):
             )
         from django_tenants.utils import schema_context
         from ruteo.models.despacho import RutDespacho
+        from ruteo.models.despacho_evento import RutDespachoEvento
         from ruteo.servicios.despacho import DespachoServicio
+        from ruteo.servicios.evento import registrar_evento
         with schema_context(ve.schema_name):
             despacho = RutDespacho.objects.filter(pk=ve.despacho_id).first()
             if despacho is None:
@@ -330,7 +317,7 @@ class FinalizarDespachoView(MovilApiMixin, APIView):
             if not despacho.estado_finalizado_conductor:
                 despacho.estado_finalizado_conductor = True
                 despacho.save(update_fields=['estado_finalizado_conductor'])
-        # Public: espejar la bandera a la VerEntrega que lee el Home.
+                registrar_evento(despacho.id, RutDespachoEvento.TIPO_FINALIZADO, request.user.id)
         if not ve.estado_finalizado_conductor:
             ve.estado_finalizado_conductor = True
             ve.save(update_fields=['estado_finalizado_conductor'])
@@ -370,11 +357,15 @@ class ReabrirDespachoView(MovilApiMixin, APIView):
         if ve.schema_name and ve.despacho_id:
             from django_tenants.utils import schema_context
             from ruteo.models.despacho import RutDespacho
+            from ruteo.models.despacho_evento import RutDespachoEvento
+            from ruteo.servicios.evento import registrar_evento
             try:
                 with schema_context(ve.schema_name):
-                    RutDespacho.objects.filter(
+                    n = RutDespacho.objects.filter(
                         pk=ve.despacho_id, estado_terminado=False,
                     ).update(estado_finalizado_conductor=False)
+                    if n:
+                        registrar_evento(ve.despacho_id, RutDespachoEvento.TIPO_REABIERTO, request.user.id)
             except Exception:
                 pass
         if ve.estado_finalizado_conductor:

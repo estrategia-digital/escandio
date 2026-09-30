@@ -23,6 +23,7 @@ class RutNovedad(models.Model):
     movil_token = models.CharField(max_length=50, null=True)
     creado_por_id = models.IntegerField(null=True)
     origen = models.CharField(max_length=20, choices=ORIGEN_CHOICES, null=True)
+    solucionado_por_id = models.IntegerField(null=True)
     visita = models.ForeignKey(RutVisita, on_delete=models.CASCADE, related_name='novedades_visita_rel')
     novedad_tipo = models.ForeignKey(RutNovedadTipo, on_delete=models.PROTECT, related_name='novedades_novedad_tipo_rel')        
 
