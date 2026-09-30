@@ -78,8 +78,31 @@ class SeguimientoMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
             usuario_id=request.user.id,
             movil_token=movil_token,
         )
-        notificar_seguimiento(request.tenant.schema_name, request.user.id)
+        notificar_seguimiento(
+            request.tenant.schema_name, request.user.id,
+            autor_es_conductor=True, titulo='Conductor', cuerpo=texto)
         return Response({'id': mensaje.id}, status=201)
+
+    @extend_schema(tags=['seguimiento'])
+    @action(detail=False, methods=['post'], url_path='push-token')
+    def push_token(self, request):
+        from ruteo.models.push_token import RutPushToken
+        token = request.data.get('token')
+        plataforma = request.data.get('plataforma') or RutPushToken.PLATAFORMA_IOS
+        if not token:
+            return responses.error(
+                'Falta el token', responses.COD_PARAMETROS, 400,
+                titulo='Datos invalidos',
+            )
+        RutPushToken.objects.update_or_create(
+            token=token,
+            defaults={
+                'usuario_id': request.user.id,
+                'plataforma': plataforma,
+                'activo': True,
+            },
+        )
+        return Response({'mensaje': 'Token registrado'})
 
     @extend_schema(
         request=ResponderConsultaRequestSerializer,
@@ -133,5 +156,8 @@ class SeguimientoMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
             fecha=fecha,
             usuario_id=request.user.id,
         )
-        notificar_seguimiento(request.tenant.schema_name, request.user.id)
+        notificar_seguimiento(
+            request.tenant.schema_name, request.user.id,
+            autor_es_conductor=True, titulo='Conductor',
+            cuerpo='Respondió el check-in')
         return Response({'id': respuesta.id}, status=201)

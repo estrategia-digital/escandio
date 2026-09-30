@@ -131,7 +131,9 @@ class RutSeguimientoViewSet(RolMixin, viewsets.ModelViewSet):
             comentario=request.data.get('pregunta') or '¿Cómo va el viaje?',
             usuario_id=getattr(request.user, 'id', None),
         )
-        notificar_seguimiento(request.tenant.schema_name, int(conductor_id))
+        notificar_seguimiento(
+            request.tenant.schema_name, int(conductor_id),
+            titulo='Tráfico', cuerpo='¿Cómo va el viaje?')
         return Response(self.get_serializer(consulta).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['post'])
@@ -150,7 +152,9 @@ class RutSeguimientoViewSet(RolMixin, viewsets.ModelViewSet):
             es_conductor=False,
             usuario_id=getattr(request.user, 'id', None),
         )
-        notificar_seguimiento(request.tenant.schema_name, int(conductor_id))
+        notificar_seguimiento(
+            request.tenant.schema_name, int(conductor_id),
+            titulo='Tráfico', cuerpo=texto)
         return Response(self.get_serializer(mensaje).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['post'], url_path='marcar-leidos')
@@ -162,3 +166,25 @@ class RutSeguimientoViewSet(RolMixin, viewsets.ModelViewSet):
             conductor_id=conductor_id, es_conductor=True, leido=False,
         ).update(leido=True)
         return Response({'marcados': n})
+
+    @action(detail=False, methods=['get'], url_path='vapid-public-key')
+    def vapid_public_key(self, request):
+        from django.conf import settings
+        return Response({'key': settings.VAPID_PUBLIC_KEY})
+
+    @action(detail=False, methods=['post'], url_path='push-subscription')
+    def push_subscription(self, request):
+        import json as _json
+        from ruteo.models.push_token import RutPushToken
+        sub = request.data.get('subscription')
+        if not sub:
+            return Response({'detail': 'Falta subscription.'}, status=status.HTTP_400_BAD_REQUEST)
+        RutPushToken.objects.update_or_create(
+            token=_json.dumps(sub),
+            defaults={
+                'usuario_id': getattr(request.user, 'id', None),
+                'plataforma': RutPushToken.PLATAFORMA_WEB,
+                'activo': True,
+            },
+        )
+        return Response({'ok': True})

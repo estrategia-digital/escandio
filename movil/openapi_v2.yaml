@@ -585,6 +585,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedConsultaPendienteMovilList'
           description: ''
+  /api/v2/seguimiento/push-token/:
+    post:
+      operationId: seguimiento_push_token_create
+      description: Consultas de seguimiento dirigidas al conductor.
+      tags:
+      - seguimiento
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsultaPendienteMovilRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsultaPendienteMovilRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsultaPendienteMovilRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultaPendienteMovil'
+          description: ''
   /api/v2/ubicacion/:
     post:
       operationId: ubicacion_create
@@ -888,6 +915,15 @@ components:
       - fecha_registro
       - id
       - opciones
+      - pregunta
+    ConsultaPendienteMovilRequest:
+      type: object
+      description: Consulta '¿como va el viaje?' que el conductor tiene por responder.
+      properties:
+        pregunta:
+          type: string
+          minLength: 1
+      required:
       - pregunta
     CrearNovedadRequestRequest:
       type: object
