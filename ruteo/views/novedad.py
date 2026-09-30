@@ -79,8 +79,9 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
             if novedad.estado_solucion == False:                
                 with transaction.atomic():
                     novedad.estado_solucion = True
-                    novedad.fecha_solucion = timezone.now() 
+                    novedad.fecha_solucion = timezone.now()
                     novedad.solucion = solucion
+                    novedad.solucionado_por_id = request.user.id
                     novedad.save()
                     # .first() en vez de get(): una novedad huerfana (visita
                     # borrada) no debe dar 500; se marca resuelta igual.
@@ -146,7 +147,10 @@ class RutNovedadViewSet(RolMixin, viewsets.ModelViewSet):
                 serializer = RutNovedadSerializador(data=data)
                 if not serializer.is_valid():
                     return Response({'mensaje':'Errores de validación', 'codigo':14, 'validaciones': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-                novedad = serializer.save()
+                novedad = serializer.save(
+                    creado_por_id=request.user.id,
+                    origen=RutNovedad.ORIGEN_LEGACY,
+                )
                 visita.estado_novedad = True
                 # El contador visitas_novedad lo repone la señal de RutVisita.
                 visita.save(update_fields=['estado_novedad'])

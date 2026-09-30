@@ -53,9 +53,7 @@ class ExcelExportar:
     @staticmethod
     def _limpiar(value):
         # openpyxl rechaza caracteres de control ilegales en el XML (p.ej. \x0b)
-        # y revienta la exportacion con IllegalCharacterError (500). Los datos
-        # importados/decodificados a veces traen estos caracteres en direccion,
-        # destinatario u observacion, asi que los removemos antes de escribir.
+        # y revienta la exportacion con IllegalCharacterError (500).
         if isinstance(value, str):
             return ILLEGAL_CHARACTERS_RE.sub('', value)
         return value
@@ -181,12 +179,10 @@ class ExcelExportar:
             columna_final = chr(ord('A') + num_columnas - 1)
             self.agregar_titulo(ws, self.titulo, 'A', columna_final)
 
-            # Encabezados
             for col_idx, col_name in enumerate(encabezados, start=1):
                 cell = ws.cell(row=5, column=col_idx, value=col_name)
                 cell.font = estilo_encabezado
 
-            # Filas de datos
             for row_idx, row_data in enumerate(self.data, start=6):
                 for col_idx, col in enumerate(encabezados_originales, start=1):
                     value = row_data.get(col, '')

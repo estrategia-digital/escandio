@@ -17,11 +17,7 @@ def convertir_a_letras(numero):
         return "Número fuera de rango"
     
     palabras = num2words(numero, lang='es').title()
-    
-    # Reemplazar "Y Un" por "Y Unos" cuando corresponda
     palabras = palabras.replace("Y Un ", "Y Unos ")
-    
-    # Agregar "Pesos" al final
     palabras += " Pesos"
     
     return palabras.upper()
@@ -75,27 +71,22 @@ class Utilidades:
         :param fecha_fin: Fecha final en formato 'YYYY-MM-DD'.
         :return: Número de días entre las dos fechas, con meses de 30 días y ajuste para febrero.
         """
-        # Convertimos las fechas en objetos datetime
         inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
         fin = datetime.strptime(fecha_fin, "%Y-%m-%d")
-        
-        # Calculamos las diferencias de años, meses y días
+
         años = fin.year - inicio.year
         meses = fin.month - inicio.month
         dias = fin.day - inicio.day
 
-        # Totalizamos los meses y los días
         total_meses = años * 12 + meses
         total_dias = total_meses * 30 + dias
 
-        # Ajuste para febrero
         if fin.month == 2:
             if fin.day == 28:
-                total_dias += 2  
+                total_dias += 2
             elif fin.day == 29:
-                total_dias += 1 
+                total_dias += 1
 
-        # Sumamos 1 día adicional
         total_dias += 1
 
         return total_dias
@@ -134,11 +125,8 @@ class Utilidades:
                 'base64_raw': base64_data
             }
         else:
-            # Base64 crudo (sin prefijo 'data:[tipo]/[extensión];base64,').
-            # Algunos clientes (p. ej. la app móvil al cargar el logo) envían
-            # solo el contenido, sin encabezado. En vez de romper con un 500,
-            # asumimos un tipo por defecto (imagen JPEG) y devolvemos el mismo
-            # contrato de salida.
+            # Base64 crudo sin prefijo (p.ej. la app movil al cargar el logo):
+            # se asume JPEG por defecto en vez de romper con un 500.
             content_type = 'image/jpeg'
             extension = content_type.split('/')[1]
             return {

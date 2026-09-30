@@ -58,9 +58,6 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         usuarioEmpresa = self.get_object()
-        # Quien elimina debe poder editar el modulo 'usuario' en ese
-        # contenedor: propietario (admin), supervisor por plantilla o super
-        # admin global. Operativo/consulta no.
         if not puede_editar_modulo(request.user, usuarioEmpresa.contenedor, 'usuario'):
             return Response(
                 {'mensaje': 'No autorizado', 'codigo': 13},
@@ -87,7 +84,6 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         if not (usuario_id and usuario_invitado_id):
             return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Normalizar a lista de contenedores
         if contenedores_ids and isinstance(contenedores_ids, list):
             ids = [int(x) for x in contenedores_ids if x]
         elif contenedor_id:
@@ -95,9 +91,6 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         else:
             return Response({'mensaje':'Faltan parametros', 'codigo':2}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Validar que el invitador puede editar el modulo 'usuario' en cada
-        # contenedor. Aplica a propietario (admin del contenedor), supervisor
-        # via plantilla y super admin global.
         contenedores = Contenedor.objects.filter(id__in=ids)
         no_autorizados = [
             c.id for c in contenedores
@@ -109,9 +102,7 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Validar limite de usuarios del plan (si el contenedor tiene Plan
-        # con `usuarios_base`). Si el modelo Plan no esta resoluble en este
-        # entorno, no validamos — defensivo.
+        # Si el modelo Plan no esta resoluble en este entorno, no se valida (defensivo).
         sobre_limite = []
         for c in contenedores:
             try:
@@ -137,7 +128,6 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Perfiles y accesos opcionales
         perfil_web = raw.get('perfil_web') or 'operativo'
         perfil_movil = raw.get('perfil_movil')
         tiene_acceso_web = bool(raw.get('tiene_acceso_web', True))
@@ -195,8 +185,7 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         except Contenedor.DoesNotExist:
             return Response({'mensaje': 'Contenedor no existe', 'codigo': 4}, status=status.HTTP_404_NOT_FOUND)
 
-        # Si es admin del contenedor, devuelve un payload con rol propietario
-        # y permisos null (admin bypassa el gate granular en backend).
+        # Admin bypassa el gate granular en backend: permisos null.
         if contenedor.usuario_id == request.user.id or request.user.is_superuser:
             return Response({
                 'rol': 'propietario',
@@ -299,15 +288,12 @@ class UsuarioContenedorViewSet(viewsets.ModelViewSet):
         contenedor.usuario = nuevo
         contenedor.save()
 
-        # El nuevo admin queda con rol='propietario' (preserva sus accesos si ya tenia membresia).
         UsuarioContenedor.objects.update_or_create(
             usuario_id=nuevo.id,
             contenedor_id=contenedor.id,
             defaults={'rol': 'propietario'},
         )
 
-        # El admin anterior queda como usuario regular con permisos de operativo por defecto
-        # si no los tenia (caso comun: era propietario inicial sin permisos cargados).
         if admin_anterior_id and admin_anterior_id != nuevo.id:
             uc, _ = UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,

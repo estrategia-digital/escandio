@@ -131,13 +131,9 @@ class RutUbicacionViewSet(RolMixin, viewsets.ModelViewSet):
             google_error = google_data.get('error_message', '')
 
             if google_status != 'OK':
-                # Loggeamos el detalle real de Google para diagnosticar la causa
-                # raiz cuando los usuarios reporten que "no llega coordenada":
-                # - ZERO_RESULTS: place_id valido pero sin datos.
-                # - OVER_QUERY_LIMIT: cuota diaria/por-segundo excedida.
-                # - REQUEST_DENIED: key sin Places API habilitada o restringida.
-                # - INVALID_REQUEST: place_id expirado o malformado.
-                # - UNKNOWN_ERROR: transitorio, conviene reintentar.
+                # Se loggea el status real de Google (ver _mensaje_segun_google_status
+                # para el significado de cada uno) para diagnosticar reportes de
+                # "no llega coordenada".
                 logger.warning(
                     'Google Places Details no devolvio OK | status=%s error=%s place_id=%s',
                     google_status, google_error, place_id,
@@ -153,7 +149,6 @@ class RutUbicacionViewSet(RolMixin, viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Extraemos los datos relevantes
             result = google_data.get('result', {})
             geometry = result.get('geometry', {}).get('location', {})
             latitude = geometry.get('lat')

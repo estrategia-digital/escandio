@@ -3,6 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Count, Q
 from ruteo.models.despacho import RutDespacho
+from ruteo.models.despacho_evento import RutDespachoEvento
+from ruteo.serializers.despacho_evento import RutDespachoEventoSerializador
+from ruteo.servicios.evento import registrar_evento
 from ruteo.models.visita import RutVisita
 from ruteo.models.vehiculo import RutVehiculo
 from vertical.models.entrega import VerEntrega
@@ -146,6 +149,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho.fecha_salida = datetime.now()
                         despacho.entrega_id = entrega.id
                         despacho.save()
+                        registrar_evento(despacho.id, RutDespachoEvento.TIPO_APROBADO, request.user.id)
                     else:
                         return Response({'mensaje':'El despacho ya esta aprobado', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                 resultado_notif = NotificacionServicio.notificar_despacho_aprobado(
@@ -231,10 +235,8 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
             return Response({'mensaje':'Faltan parametros', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
         try:
             with transaction.atomic():
-                # Lock de fila: serializa dos "terminar" concurrentes (dos
-                # operadores/pestañas). El segundo espera al commit del primero,
-                # lee estado_terminado=True y validar_terminacion lo rechaza ->
-                # no se crean dos Documentos de Terminación.
+                # Lock de fila: serializa dos "terminar" concurrentes; el segundo
+                # espera el commit del primero y validar_terminacion lo rechaza.
                 despacho = RutDespacho.objects.select_for_update().get(pk=id)
                 ok, mensaje = DespachoServicio.validar_terminacion(despacho)
                 if not ok:
@@ -252,16 +254,24 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 DespachoServicio.guardar_terminacion(
                     despacho, consolidado, usuario_id=getattr(request.user, 'id', None)
                 )
-                # Espeja el cierre a la VerEntrega publica (la que lee el movil) para
-                # que el despacho pase a Historial en la app. Mismo patron que
-                # asignar-conductor/anular (tenant -> public por despacho_id+schema).
+                # Espeja el cierre a la VerEntrega publica (la que lee el movil)
+                # para que el despacho pase a Historial en la app.
                 VerEntrega.objects.filter(
                     despacho_id=despacho.id,
                     schema_name=request.tenant.schema_name,
                 ).update(estado_terminado=True)
+                registrar_evento(despacho.id, RutDespachoEvento.TIPO_TERMINADO, getattr(request.user, 'id', None))
                 return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)
         except RutDespacho.DoesNotExist:
             return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["get"], url_path=r'eventos',)
+    def eventos(self, request):
+        despacho_id = request.query_params.get('despacho_id')
+        if not despacho_id:
+            return Response({'mensaje': 'Falta despacho_id', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
+        qs = RutDespachoEvento.objects.filter(despacho_id=despacho_id).order_by('fecha', 'id')
+        return Response(RutDespachoEventoSerializador(qs, many=True).data)
 
     @action(detail=False, methods=["post"], url_path=r'anular',)
     def anular(self, request):
@@ -272,12 +282,9 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 with transaction.atomic():
                     despacho = RutDespacho.objects.select_for_update().get(pk=id)
                     if despacho.estado_aprobado == True and despacho.estado_anulado == False and despacho.estado_terminado == False:
-                        # Candado: no anular un despacho que un conductor tiene en la
-                        # calle. Puede tener novedades/entregas creadas offline (aun
-                        # sin sincronizar); si anulamos y luego se limpian las visitas,
-                        # esas novedades quedan huerfanas ("la visita no existe"). El
-                        # conductor debe soltar/finalizar primero, o la oficina quitar
-                        # la asignacion.
+                        # Candado: no anular un despacho con conductor asignado.
+                        # Puede tener novedades/entregas offline sin sincronizar
+                        # que quedarian huerfanas si limpiamos las visitas.
                         if despacho.conductor_id:
                             return Response({'mensaje': 'El despacho tiene un conductor asignado. Antes de anular, el conductor debe soltar o finalizar la orden (o quitá la asignación) para no perder novedades sin sincronizar.', 'codigo': 16}, status=status.HTTP_400_BAD_REQUEST)
                         visitas_entregadas = RutVisita.objects.filter(despacho_id=id, estado_entregado=True).first()
@@ -287,11 +294,10 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho.estado_anulado = True
                         despacho.estado_terminado = True
                         despacho.save()
-                        # Quitar la orden del movil: al anular hay que BORRAR la
-                        # VerEntrega publica del despacho. Si no, queda "pegada" en
-                        # "Mis Ordenes" del conductor (usuario_id sigue seteado) sin
-                        # forma de sacarla (era la causa de las ordenes huerfanas).
-                        # Mismo patron que asignar-conductor (que si llega al movil).
+                        registrar_evento(despacho.id, RutDespachoEvento.TIPO_ANULADO, request.user.id)
+                        # Al anular hay que BORRAR la VerEntrega publica del despacho:
+                        # si no, queda pegada en "Mis Ordenes" del conductor sin forma
+                        # de sacarla (causa de las ordenes huerfanas).
                         VerEntrega.objects.filter(
                             despacho_id=despacho.id,
                             schema_name=request.tenant.schema_name,
@@ -369,12 +375,9 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         id = raw.get('id')
         despacho_origen_id = raw.get('despacho_origen_id')
         if id and despacho_origen_id:
-            # El origen se digita a mano: llegaba texto libre ("17631." con punto)
-            # directo a .get(pk=...) -> ValueError -> 500 (el except de abajo solo
-            # atrapa DoesNotExist). Ademas 'id' venia int y el origen str, asi que
-            # 'id != despacho_origen_id' era siempre verdadero y no atajaba el
-            # trasbordo de un despacho hacia si mismo (le restaba y sumaba visitas
-            # al mismo registro).
+            # El origen se digita a mano y puede llegar texto libre o mezclar
+            # int/str, lo que rompia la comparacion 'id != despacho_origen_id'
+            # (dejaba trasbordar un despacho hacia si mismo). Se normaliza a int.
             try:
                 id = int(str(id).strip())
                 despacho_origen_id = int(str(despacho_origen_id).strip())
@@ -553,9 +556,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
         """Asigna (o quita) el conductor de un despacho.
 
         Setea RutDespacho.conductor_id Y propaga a VerEntrega.usuario_id, porque
-        el usuario_id se congela al APROBAR: si el despacho ya se aprobo, hay que
-        actualizarlo aca para que la orden aparezca/desaparezca en 'Mis Ordenes'
-        del conductor con solo refrescar (no hace falta cargar por codigo)."""
+        VerEntrega.usuario_id se congela al APROBAR."""
         raw = request.data
         despacho_id = raw.get('despacho_id') or raw.get('id')
         # conductor_id: id de usuario a asignar, o None/''/0 para DESASIGNAR.
@@ -587,6 +588,10 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho_id=despacho.id,
                     schema_name=request.tenant.schema_name,
                 ).update(usuario_id=conductor_id)
+                registrar_evento(
+                    despacho.id, RutDespachoEvento.TIPO_ASIGNADO, request.user.id,
+                    detalle=f'conductor_id={conductor_id}' if conductor_id else 'desasignado',
+                )
         except RutDespacho.DoesNotExist:
             return Response({'mensaje': f'No existe el despacho {despacho_id}', 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'mensaje': 'Conductor actualizado'}, status=status.HTTP_200_OK)
@@ -634,14 +639,10 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         list(RutVehiculo.objects.values_list('placa', flat=True)[:50]),
                     )
                 if vehiculo:
-                    # Idempotencia: no crear un despacho duplicado si ese codigo del
-                    # complemento ya se trajo CON guias. Pero si el despacho que ya
-                    # existe quedo VACIO (0 visitas: por un intento fallido, o porque
-                    # el complemento se anulo/despacho y ya no tiene pendientes),
-                    # bloquear seria una TRAMPA: nunca se podria re-importar ese
-                    # codigo. En ese caso se borra el cascaron vacio y se re-crea
-                    # limpio, dentro de la transaccion: si el import vuelve a traer 0,
-                    # el rollback restaura el cascaron y todo queda como estaba.
+                    # Idempotencia: no duplicar el despacho si ese codigo ya se trajo
+                    # CON guias. Si existe pero quedo VACIO, se borra el cascaron y se
+                    # re-crea dentro de la transaccion (si vuelve a traer 0, el
+                    # rollback lo restaura).
                     existente = RutDespacho.objects.filter(codigo_complemento=codigo_complemento).first()
                     if existente and RutVisita.objects.filter(despacho_id=existente.id).exists():
                         return Response({'mensaje': f'El despacho {despacho_id} ya esta creado en Ruteo (despacho #{existente.id}). Buscalo en la lista de despachos.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
@@ -666,18 +667,12 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         despacho = serializador.save()
                         limite_complemento = GenConfiguracion.objects.filter(pk=1).values_list('rut_limite_complemento', flat=True).first() or 1000
                         resultado = VisitaServicio.importar_complemento(limite=limite_complemento, guia_desde=None, guia_hasta=None, fecha_desde=None, fecha_hasta=None, pendiente_despacho=False, codigo_contacto=None, codigo_destino=None, codigo_zona=None, codigo_despacho=despacho_id, despacho_id=despacho.id)
-                        # El import puede fallar (p.ej. Semantica caida en la 2da
-                        # llamada). Antes se IGNORABA el retorno y se respondia
-                        # "exito" con un despacho vacio -> el operador creia que
-                        # quedo bien. Ahora se revierte y se avisa el fallo real.
                         if resultado.get('error'):
                             transaction.set_rollback(True)
                             return Response({'mensaje': f'No se pudieron traer las guias del despacho {despacho_id}: {resultado.get("mensaje", "error del complemento")}. No se creo el despacho.', 'codigo':1}, status=status.HTTP_400_BAD_REQUEST)
                         cantidad = resultado.get('cantidad', 0)
                         duplicadas = resultado.get('duplicadas', 0)
-                        # No dejar un despacho VACIO: si no entro ninguna guia se
-                        # revierte y se explica por que (ya importadas vs sin guias),
-                        # en vez de crear un despacho inutil que dice "exito".
+                        # No dejar un despacho VACIO: si no entro ninguna guia se revierte.
                         if cantidad == 0:
                             transaction.set_rollback(True)
                             if duplicadas:
@@ -699,8 +694,6 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                         mensaje = f'Se creo el despacho con {cantidad} guia(s).'
                         if duplicadas:
                             mensaje += f' ({duplicadas} ya estaban en Ruteo y no se re-agregaron.)'
-                        # Se devuelven los conteos para que el front muestre el
-                        # mismo modal de resumen que los otros imports.
                         return Response({
                             'mensaje': mensaje,
                             'cantidad': cantidad,

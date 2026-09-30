@@ -8,7 +8,6 @@ class PDFUtilidades:
     Clase utilitaria para funcionalidades reutilizables en PDFs
     """
     
-    # Canvas para pie de página
     class PieDePagina(canvas.Canvas):
         """Canvas reutilizable para numeración de páginas"""
         
@@ -53,28 +52,23 @@ class PDFUtilidades:
         """
         Dibuja una celda con borde, con opción de solo título o título+valor
         """
-        
-        # Dibujar el rectángulo del borde
         p.rect(x, y, ancho, alto)
-        
+
         if solo_titulo:
-            # Modo solo título - título alineado según alineacion_titulo
             p.setFont(font_titulo, size_titulo)
-            titulo_width = p.stringWidth(titulo, font_titulo, size_titulo)  # Quité .upper()
-            
-            # Calcular posición del título según alineación
+            titulo_width = p.stringWidth(titulo, font_titulo, size_titulo)
+
             if alineacion_titulo == "derecha":
                 titulo_x = x + ancho - titulo_width - padding
             elif alineacion_titulo == "izquierda":
                 titulo_x = x + padding
             else:  # centro (por defecto)
                 titulo_x = x + (ancho - titulo_width) / 2
-            
+
             titulo_y = y + (alto - size_titulo) / 2 + ajuste_titulo
-            p.drawString(titulo_x, titulo_y, titulo)  # Quité .upper()
-            
+            p.drawString(titulo_x, titulo_y, titulo)
+
         else:
-            # Modo título + valor (código existente)
             p.setFont(font_titulo, size_titulo)
             titulo_width = p.stringWidth(titulo.upper(), font_titulo, size_titulo)
             titulo_x = x + (ancho - titulo_width) / 2
@@ -107,13 +101,11 @@ class PDFUtilidades:
         
         return x + ancho
     
-    # Métodos estáticos para estilos
     @staticmethod
     def obtener_estilos():
         """Retorna todos los estilos predefinidos"""
         estilos = getSampleStyleSheet()
-        
-        # Estilo etiqueta (bold)
+
         estilo_etiqueta = ParagraphStyle(
             'etiqueta',
             parent=estilos["Normal"],
@@ -123,7 +115,6 @@ class PDFUtilidades:
             spaceAfter=6
         )
         
-        # Estilo dato (normal)
         estilo_dato = ParagraphStyle(
             'dato',
             parent=estilos["Normal"],
@@ -133,7 +124,6 @@ class PDFUtilidades:
             spaceAfter=6
         )
         
-        # Estilo fecha
         estilo_fecha = ParagraphStyle(
             'fecha',
             parent=estilos["Normal"],
@@ -143,7 +133,6 @@ class PDFUtilidades:
             spaceAfter=6
         )
         
-        # Estilo para tablas
         estilo_tabla = ParagraphStyle(
             'tabla',
             parent=estilos["Normal"],
@@ -153,7 +142,6 @@ class PDFUtilidades:
             wordWrap=True
         )
         
-        # Estilo numérico para tablas (alineado a la derecha)
         estilo_numero_tabla = ParagraphStyle(
             'numero_tabla',
             parent=estilos["Normal"],
@@ -224,7 +212,6 @@ class PDFUtilidades:
             if hasattr(fecha_obj, 'strftime'):
                 return fecha_obj.strftime(formato)
             else:
-                # Si no es un objeto datetime, intentar convertirlo
                 return str(fecha_obj)
         except (AttributeError, ValueError, TypeError):
             return str(fecha_obj) if fecha_obj else ""
@@ -241,10 +228,8 @@ class PDFUtilidades:
             numero = float(valor)
             
             if decimales == 0:
-                # Formatear como entero con separadores de miles
                 return f"{int(numero):,}".replace(",", separador_miles)
             else:
-                # Formatear con decimales
                 formato = f"{{:,.{decimales}f}}"
                 numero_formateado = formato.format(numero)
                 return numero_formateado.replace(",", "X").replace(".", ",").replace("X", separador_miles)

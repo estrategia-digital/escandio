@@ -56,3 +56,9 @@ uritemplate==4.2.0
 urllib3==2.6.3
 uvicorn==0.40.0
 sentry-sdk==2.66.0
+
+channels==4.3.2
+channels-redis==4.3.0
+daphne==4.2.3
+pywebpush==2.5.0
+aioapns==4.0

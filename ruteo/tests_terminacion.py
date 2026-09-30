@@ -39,6 +39,7 @@ class _Req:
     def __init__(self, data, user_id=None):
         self.data = data
         self.user = _User(user_id)
+        self.tenant = connection.tenant
 
 
 class _Base(TenantTestCase):

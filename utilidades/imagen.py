@@ -12,12 +12,9 @@ class Imagen:
         try:
             img = Image.open(imagen)
 
-            # draft() le pide al decoder de JPEG que decodifique a una escala
-            # cercana al tamano final (1/2, 1/4, 1/8) SIN cargar la imagen a
-            # resolucion completa en RAM. Baja el pico de memoria ~10x en fotos
-            # grandes de celular: la fuga venia de convert()/resize() decodificando
-            # el JPEG entero (pico de 50-150 MB por foto que glibc no devolvia).
-            # Es no-op para formatos que no son JPEG.
+            # draft() decodifica el JPEG a una escala cercana al tamano final sin
+            # cargarlo a resolucion completa en RAM (baja el pico de memoria ~10x
+            # en fotos de celular). No-op para formatos que no son JPEG.
             if max_width:
                 img.draft('RGB', (max_width, max_width))
 

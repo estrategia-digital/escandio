@@ -7,16 +7,7 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError, Cli
 from io import BytesIO
 
 class SpaceDo():
-    #documentacion: https://docs.digitalocean.com/products/spaces/reference/s3-sdk-examples/
-        #Listar los buckets
-        #response = client.list_buckets()
-        #for space in response['Buckets']:
-        #    print(space['Name'])
-        #Listar archivos del bucket
-        #response = client.list_objects(Bucket='semantica')
-        #for obj in response['Contents']:
-        #    print(obj['Key'])
-
+    # Documentacion: https://docs.digitalocean.com/products/spaces/reference/s3-sdk-examples/
 
     def __init__(self):
         session = boto3.session.Session()

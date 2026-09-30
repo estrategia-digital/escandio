@@ -7,5 +7,6 @@ class SeguimientoFilter(django_filters.FilterSet):
         model = RutSeguimiento
         fields = {'id': ['exact'],
                   'despacho_id': ['exact'],
+                  'conductor_id': ['exact'],
                   'tipo': ['exact'],
                   'estado': ['exact'],}

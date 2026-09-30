@@ -267,9 +267,6 @@ class RutVistaTraficoSerializador(_EntregadoPorNombreMixin, serializers.ModelSer
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # Quien entrego ESTA guia (analitica / multi-conductor). Cache por
-        # instancia del serializer (reutilizado con many=True) -> 1 query por
-        # usuario unico en vez de 1 por guia.
         data['entregado_por_nombre'] = self._nombre_usuario(instance.entregado_por_id)
         return data
 

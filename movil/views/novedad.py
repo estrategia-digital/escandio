@@ -47,10 +47,8 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
                 'Faltan parametros (visita_id, novedad_tipo_id, fecha, movil_token)',
                 responses.COD_PARAMETROS, 400, titulo='Datos invalidos',
             )
-        # El movil (FormData de React Native) puede mandar "undefined", un UUID o
-        # "12.0"; sin esta coercion, filter(pk=...) revienta con ValueError -> 500
-        # -> "servidor fuera de linea" + bucle de re-sync. El guard de arriba solo
-        # verifica que existan, no que sean numericos.
+        # El movil puede mandar "undefined", un UUID o "12.0"; sin coercion,
+        # filter(pk=...) revienta con ValueError -> 500.
         try:
             visita_id = int(visita_id)
             novedad_tipo_id = int(novedad_tipo_id)
@@ -86,6 +84,8 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
                 movil_token=movil_token,
                 imagenes=request.FILES.getlist('imagenes'),
                 tenant=request.tenant,
+                creado_por_id=request.user.id,
+                origen=RutNovedad.ORIGEN_APP,
             )
         except EvidenciaNoGuardada:
             return responses.error(
@@ -121,12 +121,12 @@ class NovedadMovilViewSet(MovilApiMixin, viewsets.GenericViewSet):
             novedad.estado_solucion = True
             novedad.fecha_solucion = timezone.now()
             novedad.solucion = request.data.get('solucion')
+            novedad.solucionado_por_id = request.user.id
             novedad.save()
             visita = RutVisita.objects.filter(pk=novedad.visita_id).first()
             if visita:
                 visita.estado_novedad = False
-                # save() dispara la señal post_save que RECOMPUTA visitas_novedad
-                # desde las visitas reales; NO restar -1 a mano aca (quedaba doble
-                # decremento y el contador podia terminar negativo).
+                # save() dispara la señal post_save que recomputa visitas_novedad;
+                # NO restar -1 a mano aca.
                 visita.save(update_fields=['estado_novedad'])
         return Response({'mensaje': 'Novedad solucionada'})

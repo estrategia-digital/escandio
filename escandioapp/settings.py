@@ -26,22 +26,14 @@ SECRET_KEY = 'django-insecure-x)e8ci34g3_w6y6&p-=4lcnn2z@jnic9#4h(s8&8bhq_jz9mj!
 DEBUG = config('ENV', default='dev') != 'prod'
 
 # === Sentry (observabilidad de errores) ===
-# DORMIDO si no hay SENTRY_DSN en el .env: en dev/local no envia nada. En el
-# server basta poner SENTRY_DSN=... para prenderlo. Captura los 500 NO manejados
-# (via DjangoIntegration; el EXCEPTION_HANDLER devuelve None y Django los
-# re-lanza) con traceback + tag de `tenant` (ver escandioapp.middleware).
-# PII: send_default_pii=False (no manda usuario/cookies/auth) y NO se manda el
-# body del request (trae datos de clientes). OJO: Sentry SI incluye variables
-# locales en el traceback, que pueden traer datos de clientes; si su politica lo
-# exige, agregar include_local_variables=False (pierde poder de diagnostico).
+# DORMIDO si no hay SENTRY_DSN (dev/local no envia nada). Captura los 500 NO
+# manejados con tag de `tenant` (ver escandioapp.middleware). PII: no manda
+# usuario/cookies/auth ni el body del request. OJO: Sentry SI incluye variables
+# locales en el traceback (pueden traer datos de clientes).
 def _sentry_before_send(event, hint):
-    """Filtra ruido antes de mandar a Sentry.
-
-    Silencia el ValueError de arranque de uvicorn + Django ASGI: uvicorn envia
-    un scope 'lifespan' que el ASGIHandler de Django rechaza con
-    "Django can only handle ASGI/HTTP connections, not lifespan". No afecta las
-    peticiones, es puro ruido de startup. Se descarta SOLO ese error puntual
-    (por el mensaje exacto), sin perder ningun otro ValueError real.
+    """Descarta el ValueError de arranque de uvicorn+ASGI ("can only handle
+    ASGI/HTTP connections, not lifespan"): es puro ruido de startup, no afecta
+    peticiones. Solo ese mensaje exacto; cualquier otro ValueError pasa normal.
     """
     exc_info = (hint or {}).get('exc_info')
     if exc_info:
@@ -89,12 +81,14 @@ TENANT_APPS = (
 )
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     'rest_framework',
     'drf_spectacular',
     'django_tenants',
@@ -140,6 +134,30 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'escandioapp.wsgi.application'
+ASGI_APPLICATION = 'escandioapp.asgi.application'
+
+_REDIS_URL = config('REDIS_URL', default='')
+if _REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': [_REDIS_URL]},
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
+    }
+
+# Push sin Firebase. Vacío → los senders son no-op (no rompe nada).
+VAPID_PUBLIC_KEY = config('VAPID_PUBLIC_KEY', default='')
+VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
+VAPID_CLAIMS_EMAIL = config('VAPID_CLAIMS_EMAIL', default='mailto:soporte@ruteo.co')
+APNS_KEY_PATH = config('APNS_KEY_PATH', default='')
+APNS_KEY_ID = config('APNS_KEY_ID', default='')
+APNS_TEAM_ID = config('APNS_TEAM_ID', default='')
+APNS_TOPIC = config('APNS_TOPIC', default='com.anonymous.lutencio')
+APNS_USE_SANDBOX = config('APNS_USE_SANDBOX', default='True') == 'True'
 
 
 # Database
@@ -161,8 +179,8 @@ DATABASE_ROUTERS = (
 )
 
 
-TENANT_MODEL = "contenedor.Contenedor" # app.Model
-TENANT_DOMAIN_MODEL = "contenedor.Dominio"  # app.Model
+TENANT_MODEL = "contenedor.Contenedor"
+TENANT_DOMAIN_MODEL = "contenedor.Dominio"
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -201,8 +219,6 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 REST_FRAMEWORK = {
-    # Use Django's standard `django.contrib.auth` permissions,
-    # or allow read-only access for unauthenticated users.
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 30,  

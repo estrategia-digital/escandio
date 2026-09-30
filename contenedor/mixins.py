@@ -56,7 +56,7 @@ class RolMixin:
             else:
                 permisos.append(EsMiembroEditor())
         else:
-            # Acciones @action custom: por defecto requieren editor del modulo si esta definido
+            # Acciones @action custom.
             if self.modulo:
                 permisos.append(PermisoModuloEditar(self.modulo)())
             else:

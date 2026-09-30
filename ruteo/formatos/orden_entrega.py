@@ -112,7 +112,6 @@ class FormatoOrdenEntrega:
 
         fecha_formateada = timezone.localtime(despacho.fecha).strftime("%Y-%m-%d") if despacho.fecha else "N/A"
 
-        # Fila 1 - Agregar "Orden entrega:" antes de "Vehículo:"
         fila1_data = [
             Paragraph("Id:", estilo_etiqueta),
             Paragraph(str(despacho.id), estilo_dato),
@@ -124,7 +123,6 @@ class FormatoOrdenEntrega:
             Paragraph(fecha_formateada, estilo_fecha)
         ]
 
-        # Fila 2 - Agregar "Código complemento:" antes de "Peso Total:"
         fila2_data = [
             Paragraph("Complemento:", estilo_etiqueta),
             Paragraph(str(despacho.codigo_complemento) if hasattr(despacho, 'codigo_complemento') and despacho.codigo_complemento else "N/A", estilo_dato),
@@ -136,7 +134,6 @@ class FormatoOrdenEntrega:
             Paragraph(str(visitas.count()), estilo_dato)
         ]
 
-        # Ajustar los anchos de columna para acomodar los nuevos campos
         ancho_total = letter[0] - (0.8 * inch)
         anchos_columnas = [
             ancho_total * 0.15,  
@@ -149,16 +146,15 @@ class FormatoOrdenEntrega:
             ancho_total * 0.14,
         ]
 
-        # Ajustar tabla_fila2 para 8 columnas también
         anchos_columnas_fila2 = [
-            ancho_total * 0.15,  # Etiqueta 1 (Código complemento:)
-            ancho_total * 0.05,  # Dato 1 (codigo_complemento)
-            ancho_total * 0.15,  # Etiqueta 2 (Peso Total:)
-            ancho_total * 0.10,  # Dato 2 (peso)
-            ancho_total * 0.15,  # Etiqueta 3 (Volumen Total:)
-            ancho_total * 0.10,  # Dato 3 (volumen)
-            ancho_total * 0.12,  # Etiqueta 4 (Total Visitas:)
-            ancho_total * 0.14,  # Dato 4 (count)
+            ancho_total * 0.15,
+            ancho_total * 0.05,
+            ancho_total * 0.15,
+            ancho_total * 0.10,
+            ancho_total * 0.15,
+            ancho_total * 0.10,
+            ancho_total * 0.12,
+            ancho_total * 0.14,
         ]
 
         tabla_fila1 = Table([fila1_data], colWidths=anchos_columnas)

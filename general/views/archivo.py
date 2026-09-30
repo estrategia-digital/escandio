@@ -101,9 +101,7 @@ class ArchivoViewSet(RolMixin, viewsets.ModelViewSet):
                 except ValueError as e:
                     return Response({'mensaje': str(e), 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
                 except B2Error:
-                    # Falla transitoria de Backblaze (p. ej. 500 internal_error). Ya se
-                    # reintentó en descargar(); acá respondemos limpio en vez de un 500
-                    # opaco, para que el cliente pueda reintentar.
+                    # Falla transitoria de Backblaze; ya se reintentó en descargar().
                     logger.exception('Descarga de archivo falló en Backblaze (archivo id=%s)', id)
                     return Response(
                         {'mensaje': 'No se pudo descargar el archivo en este momento. Intentá de nuevo en unos segundos.', 'codigo': 16},

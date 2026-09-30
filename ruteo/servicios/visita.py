@@ -241,12 +241,9 @@ class VisitaServicio():
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
-            # UPDATE por PK (no save(update_fields=...)): el solver tarda segundos
-            # y en esa ventana una visita del lote puede borrarse o despacharse. Un
-            # save(update_fields=...) sobre una fila que ya no existe afecta 0 filas
-            # y lanza DatabaseError ("did not affect any rows"). .update() no lanza:
-            # devuelve 0 y omite esa visita, que es justo lo deseado. Sigue sin
-            # pisar otros campos (p.ej. una entrega registrada en el intervalo).
+            # UPDATE por PK, no save(): el solver tarda segundos y en esa ventana
+            # una visita del lote puede borrarse o despacharse; save(update_fields)
+            # sobre una fila inexistente lanza DatabaseError, .update() no.
             RutVisita.objects.filter(pk=visita.pk).update(
                 orden=visita.orden,
                 distancia=visita.distancia,
@@ -450,12 +447,7 @@ class VisitaServicio():
             visita.distancia = Decimal(distancia)
             visita.tiempo_trayecto = Decimal(tiempo_trayecto)
             visita.tiempo = Decimal(tiempo)
-            # UPDATE por PK (no save(update_fields=...)): el solver tarda segundos
-            # y en esa ventana una visita del lote puede borrarse o despacharse. Un
-            # save(update_fields=...) sobre una fila que ya no existe afecta 0 filas
-            # y lanza DatabaseError ("did not affect any rows"). .update() no lanza:
-            # devuelve 0 y omite esa visita, que es justo lo deseado. Sigue sin
-            # pisar otros campos (p.ej. una entrega registrada en el intervalo).
+            # UPDATE por PK, no save(): ver la misma nota en _ordenar_distancia.
             RutVisita.objects.filter(pk=visita.pk).update(
                 orden=visita.orden,
                 distancia=visita.distancia,
@@ -537,20 +529,12 @@ class VisitaServicio():
             for guia in guias:
                 if cantidad >= limite:
                     break
-                # Dedup SOLO en el import al POOL (despacho_id None). En "Nuevo
-                # desde complemento" (despacho_id seteado) se traen TODAS las guias
-                # del despacho para que quede COMPLETO: se AGREGAN al despacho (no
-                # se mueven ni se omiten), como estaba antes.
-                # Para el pool: se salta si YA EXISTE una RutVisita con ese numero,
-                # ENTREGADA O NO. El codigoGuiaPk es unico por guia en Semantica, asi
-                # que "existe" = es la misma guia -> NO se duplica.
-                # (Antes solo se saltaba la copia ABIERTA: una guia ya entregada
-                # generaba un DUPLICADO al re-importar -> la oficina lo borraba y
-                # podia orfanar la evidencia offline del conductor, "la visita no
-                # existe" al sincronizar. Era la causa raiz de los duplicados.)
-                # NOTA: re-entregar una guia ya cerrada debe ser un flujo EXPLICITO,
-                # no un duplicado automatico del import. Si una guia se BORRO de
-                # verdad, no hay copia -> el re-import la vuelve a crear (correcto).
+                # Dedup SOLO en el import al POOL (despacho_id None); "Nuevo desde
+                # complemento" trae TODAS las guias del despacho a proposito. Para
+                # el pool se salta si YA EXISTE una RutVisita con ese numero,
+                # ENTREGADA O NO (codigoGuiaPk es unico en Semantica) — re-entregar
+                # una guia cerrada debe ser un flujo explicito, no un duplicado
+                # automatico del import.
                 numero_guia = guia.get('codigoGuiaPk')
                 if despacho_id is None and numero_guia is not None and RutVisita.objects.filter(
                     numero=numero_guia,

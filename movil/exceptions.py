@@ -41,15 +41,10 @@ def _mensaje_de(data):
 
 
 def movil_exception_handler(exc, context):
-    # Excepciones que DRF NO atrapa (exception_handler devuelve None): hoy se
-    # vuelven 500 opaco -> la app muestra "servidor fuera de linea" y entra en
-    # bucle de re-sincronizacion. Las normalizamos al envelope v2 ANTES de que
-    # se vuelvan 500:
-    #  - Model.objects.get(...)/related sin atrapar -> DoesNotExist -> 404.
-    #  - fecha/numero mal formado en un filtro (django ValidationError) o campo
-    #    inexistente en filter()/values() (FieldError) -> 400.
-    # (El pk no numerico -> ValueError se valida en cada vista, NO aca, para no
-    # enmascararle a Sentry otros ValueError que si serian bugs reales.)
+    # Excepciones que DRF no atrapa se vuelven 500 opaco (la app entra en bucle
+    # de re-sincronizacion); se normalizan al envelope v2 antes de eso. El pk no
+    # numerico -> ValueError se valida en cada vista, NO aca, para no enmascararle
+    # a Sentry otros ValueError que si serian bugs reales.
     if isinstance(exc, ObjectDoesNotExist):
         return responses.error(
             'No existe el registro solicitado', responses.COD_NO_ENCONTRADO, 404,

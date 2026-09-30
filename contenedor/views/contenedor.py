@@ -23,16 +23,10 @@ from django.http import HttpResponse
 from threading import Thread
 
 def cargar_fixtures_en_segundo_plano(schema_name):
-    """
-    Función que se ejecutará en segundo plano para cargar los fixtures
-    """
     try:
         with schema_context(schema_name):
-            # Opción 1: Usando call_command (recomendado)
             #call_command('loaddata', 'fixture1.json', verbosity=0)
             #call_command('loaddata', 'fixture2.json', verbosity=0)
-            
-            # Opción 2: Manteniendo tu enfoque actual con os.system
             os.system(f"python manage.py tenant_command actualizar_fixtures general/fixtures/ --schema={schema_name}")
             os.system(f"python manage.py tenant_command actualizar_fixtures general/fixtures_inicio/ --schema={schema_name}")                
         print(f"Fixtures cargados exitosamente para {schema_name}")
@@ -287,7 +281,6 @@ class ContenedorViewSet(viewsets.ModelViewSet):
         except Contenedor.DoesNotExist:
             return Response({'mensaje': 'Contenedor no existe', 'codigo': 15}, status=status.HTTP_404_NOT_FOUND)
 
-        # Evitar asignar el mismo numero a 2 contenedores
         otro = CtnWhatsappConexion.objects.filter(phone_number_id=phone_number_id).exclude(contenedor=contenedor).first()
         if otro:
             return Response({

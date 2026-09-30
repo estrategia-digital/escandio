@@ -100,7 +100,6 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         page_usuarios = list(usuarios[offset:offset + page_size])
         ids_pagina = [u.id for u in page_usuarios]
 
-        # Solo cargamos las membresias de los usuarios de la pagina actual.
         admin_de = {}
         for c in Contenedor.objects.exclude(schema_name='public').filter(
             usuario_id__in=ids_pagina,
@@ -210,10 +209,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'usuario_id': usuario.id,
                 'token': token,
                 'vence': datetime.now().date() + timedelta(days=7),
-                # Token de CLAVE (no solo verificacion): la invitacion lleva al
-                # formulario que CREA la clave (/auth/clave/cambiar), unico flujo
-                # que hace set_password. El de /auth/verificacion solo marcaba
-                # verificado=True y dejaba al invitado sin poder ingresar.
+                # accion='clave' (no 'verificacion'): unico flujo que hace set_password.
                 'accion': 'clave',
             }
             serializador_verificacion = CtnVerificacionSerializador(data=data_v)
@@ -251,7 +247,6 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                 'mensaje_correo': mensaje_correo,
             }, status=status.HTTP_201_CREATED)
 
-        # Flujo clave directa: marcar verificado y forzar cambio en el proximo login web.
         usuario.verificado = True
         usuario.debe_cambiar_clave = True
         usuario.save()
@@ -392,13 +387,11 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
         admin_anterior_id = contenedor.usuario_id
         contenedor.usuario = nuevo
         contenedor.save()
-        # Nuevo admin: queda con rol='propietario' (preserva accesos si ya era miembro).
         UsuarioContenedor.objects.update_or_create(
             usuario_id=nuevo.id,
             contenedor_id=contenedor.id,
             defaults={'rol': 'propietario'},
         )
-        # Admin anterior queda como usuario regular con permisos de operativo si no los tenia.
         if admin_anterior_id and admin_anterior_id != nuevo.id:
             uc_ant, _ = UsuarioContenedor.objects.update_or_create(
                 usuario_id=admin_anterior_id,
@@ -430,9 +423,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
 
     @action(detail=False, methods=["post"], url_path=r'nuevo',)
     def nuevo_action(self, request):
-        # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
-        # Payload de la app: {username, password, confirmarPassword, aceptarTerminosCondiciones, aplicacion}.
-        # Solo username/password son required; el resto debe poder venir o no sin romper.
+        # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py. Solo username/password son required.
         raw = request.data
         username = raw.get('username', None)
         password = raw.get('password', None)
@@ -488,15 +479,13 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
     @action(detail=False, methods=["post"], url_path=r'cambio-clave-solicitar',)
     def cambio_clave_solicitar(self, request):
         # RETROCOMPAT MOVIL v1.6.4 - ver contenedor/contrato_movil.py
-        # La app envia {username, aplicacion}; response esperado: 201 {verificacion}.
         raw = request.data
-        username = raw.get('username')        
+        username = raw.get('username')
         if username:
             usuario = User.objects.filter(username=username).first()
             if usuario is None:
-                # No revelar si el correo existe (evita enumeracion de usuarios).
-                # Misma forma/estado que el exito; el contrato movil v1.6.4 espera
-                # 201 {verificacion} (contenedor/contrato_movil.py).
+                # No revelar si el username existe (evita enumeracion de usuarios); misma
+                # respuesta que el exito.
                 return Response({'verificacion': {}}, status=status.HTTP_201_CREATED)
 
             token = secrets.token_urlsafe(20)
@@ -546,9 +535,7 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                             verificacion.save()
                             usuario.set_password(clave)
                             usuario.debe_cambiar_clave = False
-                            # Un invitado queda verificado al crear su clave (llega
-                            # aquí desde el link de invitación). Para un reset normal
-                            # es no-op (ya estaba verificado).
+                            # Un invitado queda verificado al crear su clave; en un reset normal es no-op.
                             usuario.verificado = True
                             usuario.save()
                             return Response({'cambio': True}, status=status.HTTP_200_OK)
@@ -597,16 +584,13 @@ class UsuarioViewSet(GenericViewSet, UpdateModelMixin):
                     background.paste(img, mask=img.split()[-1])
                     img = background
 
-                # Crear thumbnail (versión pequeña)
-                thumbnail_size = (100, 100)  # Tamaño adecuado para menús
+                thumbnail_size = (100, 100)
                 img.thumbnail(thumbnail_size)
 
-                # Guardamos el original
                 archivo = f"escandio/{config('ENV')}/usuario/imagen_{usuario_id}.jpg"
                 spaceDo = SpaceDo()
                 spaceDo.putB64(archivo, base64Crudo, contentType)
 
-                #Guardar thumbnail
                 thumb_io = BytesIO()
                 img.save(thumb_io, format='JPEG', quality=85)  
                 thumb_data = thumb_io.getvalue()

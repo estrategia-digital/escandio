@@ -59,6 +59,8 @@ class RutVisita(models.Model):
     # setea la app al registrar la entrega. Base del multi-conductor colaborativo:
     # varios conductores sobre un despacho, y aca queda quien entrego CADA guia.
     entregado_por_id = models.IntegerField(null=True)
+    liberado_por_id = models.IntegerField(null=True)
+    fecha_liberado = models.DateTimeField(null=True)
     observacion = models.TextField(null=True, blank=True)
     destinatario_direccion_complemento = models.CharField(max_length=200, null=True, blank=True)
     cita_inicio = models.DateTimeField(null=True, blank=True)
