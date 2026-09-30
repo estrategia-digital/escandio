@@ -149,6 +149,16 @@ else:
         'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
     }
 
+# Push sin Firebase. Vacío → los senders son no-op (no rompe nada).
+VAPID_PUBLIC_KEY = config('VAPID_PUBLIC_KEY', default='')
+VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
+VAPID_CLAIMS_EMAIL = config('VAPID_CLAIMS_EMAIL', default='mailto:soporte@ruteo.co')
+APNS_KEY_PATH = config('APNS_KEY_PATH', default='')
+APNS_KEY_ID = config('APNS_KEY_ID', default='')
+APNS_TEAM_ID = config('APNS_TEAM_ID', default='')
+APNS_TOPIC = config('APNS_TOPIC', default='com.anonymous.lutencio')
+APNS_USE_SANDBOX = config('APNS_USE_SANDBOX', default='True') == 'True'
+
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
