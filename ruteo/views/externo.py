@@ -54,7 +54,6 @@ def crear_guia(request):
             'duplicada': True,
         }, status=status.HTTP_200_OK)
 
-    # Buscar ciudad por nombre + departamento
     departamento_nombre = str(data['departamento']).strip()
     ciudad_nombre = str(data['ciudad']).strip()
 
@@ -72,7 +71,6 @@ def crear_guia(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Limpiar y decodificar dirección
     direccion_limpia = VisitaServicio.limpiar_direccion(data['direccion'])
     franjas = RutFranja.objects.all()
 
@@ -100,7 +98,6 @@ def crear_guia(request):
         'resultados': None,
     }
 
-    # Decodificar dirección (cache o Google Maps)
     if direccion_limpia:
         respuesta = DireccionServicio.decodificar(direccion_limpia)
         if respuesta['error'] == False:
@@ -113,7 +110,6 @@ def crear_guia(request):
             if direccion['cantidad_resultados'] > 1:
                 visita_data['estado_decodificado_alerta'] = True
 
-    # Asignar franja si se decodificó
     if visita_data['estado_decodificado'] == True:
         respuesta = VisitaServicio.ubicar_punto(franjas, visita_data['latitud'], visita_data['longitud'])
         if respuesta['encontrado']:
@@ -165,7 +161,6 @@ def consultar_estado(request):
     backblaze = None
 
     for visita in visitas:
-        # Determinar estado actual
         if visita.estado_entregado:
             estado_actual = 'ENTREGADO'
         elif visita.estado_novedad:
@@ -186,13 +181,11 @@ def consultar_estado(request):
             'entrega': None,
         }
 
-        # DESPACHO
         if visita.estado_despacho and visita.despacho:
             guia['despacho'] = {
                 'fecha': visita.despacho.fecha_salida,
             }
 
-        # NOVEDADES
         novedades = RutNovedad.objects.filter(visita=visita).select_related('novedad_tipo').order_by('-id')
         for novedad in novedades:
             novedad_data = {
@@ -203,7 +196,6 @@ def consultar_estado(request):
                 'solucion': novedad.solucion,
                 'foto': None,
             }
-            # Primera foto de la novedad
             archivo = GenArchivo.objects.filter(
                 modelo='RutNovedad', codigo=novedad.id, archivo_tipo_id=2
             ).first()
@@ -219,7 +211,6 @@ def consultar_estado(request):
 
             guia['novedades'].append(novedad_data)
 
-        # ENTREGA
         if visita.estado_entregado:
             entrega_data = {
                 'fecha': visita.fecha_entrega,
@@ -228,7 +219,6 @@ def consultar_estado(request):
                 'firma': None,
             }
 
-            # Fotos de entrega (hasta 5)
             archivos_fotos = GenArchivo.objects.filter(
                 modelo='RutVisita', codigo=visita.id, archivo_tipo_id=2
             ).order_by('id')[:5]
@@ -242,7 +232,6 @@ def consultar_estado(request):
                 except Exception as e:
                     logger.error(f'Error descargando foto entrega visita {visita.id}: {e}')
 
-            # Firma
             archivo_firma = GenArchivo.objects.filter(
                 modelo='RutVisita', codigo=visita.id, archivo_tipo_id=3
             ).first()

@@ -30,10 +30,8 @@ def _a_base64(imagenes):
 
 
 def _guardar_imagenes(novedad_id, imagenes, schema_name):
-    # Igual que en entrega: un fallo transitorio de Backblaze no debe volverse
-    # 500 opaco ("servidor fuera de linea" + bucle). Se convierte en
-    # EvidenciaNoGuardada -> revierte la novedad -> la vista responde limpio para
-    # reintentar. Se loguea (exc_info) para verlo en Sentry.
+    # Igual que en entrega: un fallo transitorio de Backblaze se convierte en
+    # EvidenciaNoGuardada, que revierte la novedad y la vista responde limpio.
     try:
         backblaze = Backblaze()
         for idx, imagen in enumerate(imagenes):
@@ -116,10 +114,8 @@ def registrar_novedad(visita, novedad_tipo_id, fecha, descripcion, movil_token, 
         )
         visita.estado_novedad = True
         visita.save(update_fields=['estado_novedad'])
-        # El contador despacho.visitas_novedad lo recalcula la señal post_save de
-        # RutVisita (ver ruteo/signals.py). NO incrementar acá: la señal ya deja
-        # el valor correcto y este += sumaba de más (1 novedad -> visitas_novedad
-        # quedaba en 2).
+        # despacho.visitas_novedad lo recalcula la señal post_save de RutVisita
+        # (ver ruteo/signals.py); NO incrementar acá.
 
         if imagenes:
             _guardar_imagenes(novedad.id, imagenes, tenant.schema_name)

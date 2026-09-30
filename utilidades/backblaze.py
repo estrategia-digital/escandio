@@ -38,11 +38,8 @@ class Backblaze():
         anio_mes_actual = datetime.now().strftime("%Y/%m")
         url = f"{tenant}/{anio_mes_actual}/{uuid_referencia}_{nombre_archivo}"
         # B2 rechaza con UploadTokenUsedConcurrently cuando el mismo upload URL se
-        # usa en dos subidas casi simultaneas (p.ej. varias fotos de una entrega
-        # reusando el token cacheado). Se reintenta: cada upload_bytes toma un
-        # upload URL nuevo del pool, y el backoff da tiempo a que B2 lo libere.
-        # Antes esto se reintentaba solo porque la entrega hacia rollback; al
-        # mover la subida fuera de la transaccion ese reintento se perdio.
+        # usa en dos subidas casi simultaneas; cada intento toma un upload URL
+        # nuevo del pool y el backoff da tiempo a que B2 lo libere.
         for intento in range(intentos):
             try:
                 response = bucket.upload_bytes(file_data, url)
@@ -57,9 +54,8 @@ class Backblaze():
         bucket = self.b2_api.get_bucket_by_name(bucket_nombre)
         if bucket is None:
             raise ValueError(f"El bucket '{bucket_nombre}' no existe.")
-        # B2 puede tirar un 500 transitorio (internal_error) en la descarga. Se
-        # reintenta con backoff (mismo patron que subir_data); si persiste, se
-        # propaga el B2Error para que la vista responda limpio, no un 500 opaco.
+        # B2 puede tirar un 500 transitorio en la descarga; se reintenta con
+        # backoff y, si persiste, se propaga el B2Error.
         for intento in range(intentos):
             try:
                 downloaded_file = bucket.download_file_by_id(archivo_id)

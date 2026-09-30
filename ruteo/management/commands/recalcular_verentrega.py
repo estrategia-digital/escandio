@@ -1,18 +1,13 @@
 """Recalcula los contadores de VerEntrega (el contador del Home movil) para que
 espejen los de RutDespacho (fuente verificada, 0-drift).
 
-VerEntrega (tabla `ver_entrega`, app vertical) se crea al APROBAR el despacho y
-NO se actualizaba al entregar -> el Home movil mostraba "0 entregadas" y totales
-que no cuadraban con la lista de guias. A partir del fix en
-`movil/services/entrega.py` cada entrega la sincroniza; este comando repone las
-filas VIEJAS (aprobadas antes del fix o sin mas entregas).
+VerEntrega se crea al APROBAR el despacho y antes no se actualizaba al entregar
+-> el Home movil mostraba "0 entregadas". `movil/services/entrega.py` ya lo
+sincroniza en cada entrega; este comando repone las filas VIEJAS.
 
-Espeja los CAMPOS ALMACENADOS de RutDespacho (visitas / visitas_entregadas), que
-son el snapshot que mantiene la señal/`recalcular_contadores_despacho` y el que se
-muestra en el Home — NO el count vivo de la relacion, que difiere en despachos
-liberados/reasignados (ej. despacho 62: campo=12 vs count vivo=0). Idempotente.
-NO toca peso/volumen/tiempo. VerEntrega huerfanos (cuyo despacho no existe) se
-dejan intactos.
+Espeja los CAMPOS ALMACENADOS de RutDespacho (visitas / visitas_entregadas),
+NO el count vivo de la relacion (que difiere en despachos liberados/reasignados).
+Idempotente. NO toca peso/volumen/tiempo. VerEntrega huerfanos se dejan intactos.
 
 Uso:
     python manage.py recalcular_verentrega            # aplica a todos
@@ -35,9 +30,6 @@ def recalcular_verentrega(schema_name, dry_run=False):
     revisados = 0
     corregidos = []
     with schema_context(schema_name):
-        # Espeja los CAMPOS ALMACENADOS de RutDespacho (el snapshot que se quiere
-        # mostrar en el Home), NO el count vivo de la relacion (que difiere en
-        # despachos liberados/reasignados).
         despachos = {
             d['id']: (d['visitas'], d['visitas_entregadas'], d['codigo_complemento'])
             for d in RutDespacho.objects.values(

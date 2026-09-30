@@ -12,18 +12,14 @@ class DespachoMovilSerializer(serializers.ModelSerializer):
     usa para enrutar las llamadas posteriores al subdominio correcto.
     """
 
-    # Nombre comercial de la empresa transportadora duena de la orden: el mismo
-    # `Contenedor.nombre` que usan las notificaciones WhatsApp (ver
-    # ruteo/servicios/notificacion.py). La app lo muestra en el boton de chat con
-    # el cliente; si viene null cae a prettify(schema_name) del lado app.
+    # Mismo `Contenedor.nombre` que usan las notificaciones WhatsApp (ver
+    # ruteo/servicios/notificacion.py); si viene null cae a prettify(schema_name)
+    # del lado app.
     empresa_nombre = serializers.SerializerMethodField()
 
     # El "O_E" que muestra Trafico web es RutDespacho.entrega_id (del TENANT), NO
-    # el pk de VerEntrega. Esta serializer corre en el dominio base (public) y su
-    # `id` es el pk cross-tenant de ver_entrega, que para varias ordenes NO
-    # coincide con el entrega_id que ve el despachador. Se lee entrega_id en el
-    # schema del tenant del despacho para que la app muestre EXACTAMENTE el mismo
-    # numero (el O_E) que Trafico.
+    # el pk de VerEntrega (que es cross-tenant y no coincide). Se lee del schema
+    # del tenant del despacho para que la app muestre el mismo numero que Trafico.
     orden_entrega = serializers.SerializerMethodField()
 
     class Meta:
@@ -33,10 +29,8 @@ class DespachoMovilSerializer(serializers.ModelSerializer):
             'tiempo_trayecto', 'visitas', 'visitas_entregadas', 'despacho_id',
             'codigo_complemento', 'orden_entrega',
             'contenedor_id', 'usuario_id', 'schema_name', 'empresa_nombre',
-            # Banderas de estado del viaje: 'estado_finalizado_conductor' (el
-            # conductor ya lo dio por terminado, reversible) y 'estado_terminado'
-            # (la oficina lo cerro, definitivo). La app las usa para separar
-            # activos de Historial y habilitar Finalizar/Reabrir.
+            # estado_finalizado_conductor: reversible, lo cierra el conductor.
+            # estado_terminado: definitivo, lo cierra la oficina.
             'estado_finalizado_conductor', 'estado_terminado',
         ]
         read_only_fields = fields

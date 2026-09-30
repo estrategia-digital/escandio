@@ -46,22 +46,16 @@ class ReporteMensajeroView(APIView):
             despachos = despachos.filter(fecha__date__lte=fecha_hasta)
 
         # Se cuentan las visitas REALES, no los contadores denormalizados del
-        # despacho (visitas / visitas_entregadas / visitas_novedad): esos se
-        # desincronizan (llegaban a dar asignadas < entregadas y no cuadraban con
-        # el informe de zonas). Contando aca ambos informes salen de la misma
-        # fuente y las asignadas nunca son menores que las entregadas (subconjunto).
+        # despacho: esos pueden desincronizarse (asignadas < entregadas).
         despachos = despachos.annotate(
             _asignadas=Count('visitas_despacho_rel'),
             _entregadas=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_entregado=True)),
             # Novedad = con novedad y NO entregada (gana entregada), igual que en
-            # tráfico y el documento de terminación. Sin excluir entregadas, una
-            # guía con novedad ya entregada se contaba en ambas -> asignadas !=
-            # entregadas + novedades + pendientes y se sobre-reportaban novedades.
+            # tráfico y el documento de terminación, para que asignadas =
+            # entregadas + novedades + pendientes.
             _novedades=Count('visitas_despacho_rel', filter=Q(visitas_despacho_rel__estado_novedad=True, visitas_despacho_rel__estado_entregado=False)),
-            # Recogidas: SUBCONJUNTO de las entregadas marcadas como recogida
-            # (tipo='recogida'). Se muestra aparte para que al liquidar no se
-            # cuente una recogida como una entrega. Ahora es EXACTO (campo tipo);
-            # las históricas quedaron marcadas por el backfill de la migración.
+            # Recogidas: SUBCONJUNTO de las entregadas marcadas tipo='recogida',
+            # para no contarlas como entrega al liquidar.
             _recogidas=Count('visitas_despacho_rel', filter=Q(
                 visitas_despacho_rel__estado_entregado=True,
                 visitas_despacho_rel__tipo='recogida')),
@@ -103,16 +97,11 @@ class ReporteMensajeroView(APIView):
         return Response({'count': len(resultados), 'results': resultados}, status=status.HTTP_200_OK)
 
     def _exportar_excel(self, resultados, fecha_desde, fecha_hasta):
-        # La agregacion (por mensajero/placa/dia + totales) tambien la hace el
-        # front para mostrarla en pantalla; aca se replica para el Excel. Ambos
-        # parten de las mismas filas por despacho, asi que dan el mismo numero.
-        # Consolidar en una sola fuente queda como mejora futura.
+        # Replica para Excel la misma agregacion (mensajero/placa/dia) que hace
+        # el front, partiendo de las mismas filas por despacho.
         def dia(f):
             # Día LOCAL (America/Bogota), no UTC: la BD está en UTC y f.date()
-            # daría el día UTC, corriendo un día los despachos creados de noche
-            # (>=19:00 local). El filtro ya usa fecha__date (zona activa = local)
-            # y Movimiento muestra local; sin esto, el reporte no cuadra con
-            # Movimiento por esos despachos. Ver nota de zona horaria.
+            # correría un día los despachos creados de noche (>=19:00 local).
             return timezone.localtime(f).date().isoformat() if f else ''
 
         def cumplimiento(entregadas, asignadas):
@@ -212,16 +201,12 @@ class ReporteMensajeroEntregasView(APIView):
     """Relacion guia por guia con la zona (franja) donde cae la entrega.
 
     La zona es factor de pago del mensajero. Se entrega:
-      - 'resumen': conteo por (mensajero x zona) -> alimenta el pago. Se agrega
-        en la BD y NUNCA se trunca, asi los totales de pago siempre son completos.
-      - 'relacion': el detalle guia por guia (para verificar), acotado a
-        LIMITE_RELACION con bandera 'truncado' porque un mes puede traer decenas
-        de miles de guias.
+      - 'resumen': conteo por (mensajero x zona), agregado en BD y NUNCA truncado.
+      - 'relacion': detalle guia por guia, acotado a LIMITE_RELACION con bandera
+        'truncado'.
 
-    La zona vive denormalizada en la visita (franja_id / franja_codigo); el
-    nombre se resuelve contra RutFranja. Una guia sin franja (direccion fuera de
-    todo poligono, o franja no dibujada) sale con zona en null -> el front la
-    muestra como "Sin zona" para que se vea y se corrija, no se descarta.
+    Una guia sin franja sale con zona en null -> el front la muestra como
+    "Sin zona" para que se corrija, no se descarta.
     """
 
     permission_classes = [IsAuthenticated, PermisoModuloVer('reporte')]
@@ -239,11 +224,9 @@ class ReporteMensajeroEntregasView(APIView):
         if fecha_hasta:
             visitas = visitas.filter(despacho__fecha__date__lte=fecha_hasta)
 
-        # Resumen por (mensajero x placa x zona) -> pago. Agregado en BD, completo.
-        # Se incluye la placa porque un despacho puede no tener mensajero asignado
-        # (conductor_id nulo) pero si vehiculo: sin la placa esas guias caerian en
-        # "Sin asignar" sin forma de saber quien las hizo. Con la placa queda el
-        # rastro del vehiculo para atribuir el pago o corregir la asignacion.
+        # Resumen por (mensajero x placa x zona) -> pago, agregado en BD y completo.
+        # Se incluye la placa porque un despacho sin mensajero asignado puede
+        # igual tener vehiculo, y con la placa queda el rastro para atribuir el pago.
         resumen_bruto = list(
             visitas.values(
                 'despacho__conductor_id', 'despacho__vehiculo__placa',
@@ -251,9 +234,6 @@ class ReporteMensajeroEntregasView(APIView):
             ).annotate(
                 asignadas=Count('id'),
                 entregadas=Count('id', filter=Q(estado_entregado=True)),
-                # Novedad = con novedad y NO entregada (gana entregada), para que
-                # asignadas = entregadas + novedades + pendientes y no se
-                # sobre-reporten novedades ya entregadas.
                 novedades=Count('id', filter=Q(estado_novedad=True, estado_entregado=False)),
             )
         )

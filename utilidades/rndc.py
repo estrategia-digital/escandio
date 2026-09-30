@@ -15,7 +15,6 @@ class Rndc:
     def enviar(self, str_xml: str) -> Dict[str, Any]:
         try:
             if str_xml:
-                # Validar XML
                 xml_valido, errores_xml_envio = self._validar_xml(str_xml)
                 if xml_valido:
                     cliente = Client(self.url)
@@ -60,13 +59,12 @@ class Rndc:
     def enviar_consulta(self, str_xml: str) -> Dict[str, Any]:
         try:
             if str_xml:
-                # Validar XML
                 xml_valido, errores_xml_envio = self._validar_xml(str_xml)
                 if xml_valido:
                     cliente = Client(self.url)
                     respuesta = cliente.service.AtenderMensajeRNDC(str_xml)
-                    
-                    # Limpiar respuesta (equivalente al preg_replace de PHP)
+
+                    # Port del preg_replace de PHP original.
                     respuesta_limpia = re.sub(
                         r'\s*<\/puntocontrol>\s*<\/puntoscontrol>\s*<\/documento>\s*', 
                         '', 
@@ -110,15 +108,12 @@ class Rndc:
     
     def crear_xml(self, credencial: Dict, tipo: str, procesoid: str, 
                  propiedades: Dict, arr_guias: Optional[List] = None) -> str:
-        # Crear documento DOM
         from xml.dom.minidom import Document
         doc = Document()
-        
-        # Elemento root
+
         root = doc.createElement('root')
         doc.appendChild(root)
-        
-        # Elemento acceso
+
         acceso = doc.createElement('acceso')
         
         if procesoid == "86":
@@ -135,8 +130,7 @@ class Rndc:
         acceso.appendChild(username)
         acceso.appendChild(password)
         root.appendChild(acceso)
-        
-        # Elemento solicitud
+
         solicitud = doc.createElement('solicitud')
         tipo_dom = doc.createElement('tipo')
         tipo_dom.appendChild(doc.createTextNode(tipo))
@@ -202,15 +196,12 @@ class Rndc:
     def crear_xml_consulta(self, credencial: Dict, tipo: str, procesoid: str, 
                           parametro_variables: str, arr_parametros_documento: Dict,
                           arr_parametros_documento_rangos: Optional[Dict] = None) -> str:
-        # Crear documento DOM
         from xml.dom.minidom import Document
         doc = Document()
-        
-        # Elemento root
+
         root = doc.createElement('root')
         doc.appendChild(root)
-        
-        # Elemento acceso
+
         acceso = doc.createElement('acceso')
         username = doc.createElement('username')
         username.appendChild(doc.createTextNode(credencial['usuario']))
@@ -219,8 +210,7 @@ class Rndc:
         acceso.appendChild(username)
         acceso.appendChild(password)
         root.appendChild(acceso)
-        
-        # Elemento solicitud
+
         solicitud = doc.createElement('solicitud')
         tipo_elem = doc.createElement('tipo')
         tipo_elem.appendChild(doc.createTextNode(tipo))
@@ -229,13 +219,11 @@ class Rndc:
         solicitud.appendChild(tipo_elem)
         solicitud.appendChild(procesoid_elem)
         root.appendChild(solicitud)
-        
-        # Elemento variables
+
         variables = doc.createElement('variables')
         variables.appendChild(doc.createTextNode(parametro_variables))
         root.appendChild(variables)
-        
-        # Elemento documento
+
         documentos = doc.createElement('documento')
         nit_empresa = doc.createElement('NUMNITEMPRESATRANSPORTE')
         nit_empresa.appendChild(doc.createTextNode(credencial['nitEmpresa']))
@@ -247,8 +235,7 @@ class Rndc:
             documentos.appendChild(nodo)
         
         root.appendChild(documentos)
-        
-        # Elemento documentorango (opcional)
+
         if arr_parametros_documento_rangos:
             documento_rangos = doc.createElement('documentorango')
             for clave, valor in arr_parametros_documento_rangos.items():

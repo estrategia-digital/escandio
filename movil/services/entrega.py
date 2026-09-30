@@ -44,12 +44,9 @@ def _a_base64(archivos):
 
 
 def _guardar_archivos(visita_id, archivos, schema_name, archivo_tipo_id, extension, comprimir):
-    # Backblaze (auth + upload) hace red -> B2Error/timeout ante un fallo
-    # transitorio. Sin este try, la excepcion subia sin atrapar -> 500 opaco ->
-    # la app mostraba "servidor fuera de linea" y reintentaba en bucle. Ahora la
-    # convertimos en EvidenciaNoGuardada: la transaccion de la entrega revierte
-    # (no se da por entregada sin evidencia) y la vista responde un error LIMPIO
-    # para que el conductor reintente. Se loguea (exc_info) para verlo en Sentry.
+    # Backblaze hace red -> puede fallar transitoriamente. Se convierte en
+    # EvidenciaNoGuardada para que la transaccion de la entrega revierta (no se
+    # da por entregada sin evidencia) y la vista responda un error limpio.
     try:
         backblaze = Backblaze()
         for idx, subido in enumerate(archivos):
@@ -94,10 +91,8 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
         visita.datos_entrega = datos_entrega
         if usuario_id:
             visita.entregado_por_id = usuario_id
-        # visita.save() dispara la señal post_save (ruteo/signals.py) que
-        # RECOMPUTA visitas_entregadas desde las visitas reales; NO sumar +1 a
-        # mano aca (lo hacia y quedaba +1 de mas por entrega -> marcaba el
-        # despacho "Completada" con guias aun pendientes e inflaba VerEntrega).
+        # visita.save() dispara la señal post_save (ruteo/signals.py) que recomputa
+        # visitas_entregadas; NO sumar +1 a mano aca (inflaba el contador).
         visita.save()
         if imagenes:
             _guardar_archivos(visita.id, imagenes, tenant.schema_name, 2, 'jpg', comprimir=True)
@@ -112,13 +107,9 @@ def registrar_entrega(visita, fecha_entrega, imagenes, firmas, datos_adicionales
                 visita, _a_base64(imagenes), _a_base64(firmas), datos_entrega,
             )
 
-    # Mantener el contador del Home movil (VerEntrega, tabla externa que se fija
-    # al aprobar y NO reflejaba las entregas -> el Home mostraba "0 entregadas").
-    # Espeja los CAMPOS ALMACENADOS de RutDespacho (visitas / visitas_entregadas),
-    # que son el snapshot que mantiene la señal/`recalcular_contadores_despacho` y
-    # el que queremos mostrar (no el count vivo de la relacion, que difiere en
-    # despachos liberados). Va fuera de la transaccion y es fail-silent: nunca
-    # debe frenar una entrega ya guardada.
+    # Espeja visitas/visitas_entregadas de RutDespacho a VerEntrega (tabla externa
+    # que fija el Home movil al aprobar y no se actualiza sola). Fuera de la
+    # transaccion y fail-silent: nunca debe frenar una entrega ya guardada.
     try:
         d = RutDespacho.objects.filter(pk=visita.despacho_id).values(
             'visitas', 'visitas_entregadas').first()

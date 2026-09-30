@@ -31,9 +31,8 @@ _MODELOS_EN_USO = {
 def _tipos_que_bloquean(exc):
     """Tipos de registro (en palabras del dominio, sin repetir) que impiden el
     borrado. Best-effort: los modelos no mapeados se omiten del detalle.
-
-    ProtectedError expone .protected_objects y RestrictedError .restricted_objects;
-    cubrimos ambos para no perder el detalle segun el tipo de FK."""
+    Cubre tanto ProtectedError (.protected_objects) como RestrictedError
+    (.restricted_objects)."""
     objetos = (getattr(exc, 'protected_objects', None)
                or getattr(exc, 'restricted_objects', None) or [])
     nombres = []
@@ -45,12 +44,9 @@ def _tipos_que_bloquean(exc):
 
 
 def custom_exception_handler(exc, context):
-    # Borrado bloqueado por FK protegida (on_delete=PROTECT/RESTRICT): p.ej.
-    # eliminar un vehiculo que sigue asignado a rutas o flotas. Sin manejar,
-    # Django responde 500 opaco ("Servidor fuera de linea") y ademas ensucia
-    # Sentry con un "bug" que en realidad es una accion invalida del usuario.
-    # Lo convertimos en un 409 con mensaje claro para TODA la API (vehiculo,
-    # conductor, franja, ...), no solo el endpoint donde se reporto.
+    # Borrado bloqueado por FK protegida (on_delete=PROTECT/RESTRICT). Sin manejar,
+    # Django responde 500 opaco y ensucia Sentry con un "bug" que en realidad es
+    # una accion invalida del usuario; lo convertimos en 409 para toda la API.
     if isinstance(exc, (ProtectedError, RestrictedError)):
         tipos = _tipos_que_bloquean(exc)
         if tipos:
@@ -59,30 +55,24 @@ def custom_exception_handler(exc, context):
         else:
             mensaje = ('No se puede eliminar porque está siendo usado por otros '
                        'registros. Quítalo de donde se usa antes de eliminarlo.')
-        # info (no error): es una accion invalida esperada, no un bug -> no debe
-        # generar issue en Sentry, pero deja rastro de cuanto ocurre.
+        # info (no error): accion invalida esperada, no un bug; no debe generar issue en Sentry.
         logger.info('Borrado bloqueado por FK protegida en %s %s: %s',
                     context['request'].method, context['request'].path, mensaje)
         return Response({'mensaje': mensaje, 'codigo': 16},
                         status=status.HTTP_409_CONFLICT)
 
-    # Registro inexistente que la vista NO atrapo (un `Model.objects.get(...)`
-    # crudo, o acceso a un related inexistente). ObjectDoesNotExist es la clase
-    # base de TODOS los `Modelo.DoesNotExist`. Sin manejar seria 500 opaco; lo
-    # volvemos un 404 limpio para toda la API. (El Http404/NotFound de DRF ya lo
-    # maneja exception_handler mas abajo; esto cubre el DoesNotExist crudo de
-    # Django, que DRF deja pasar como 500.)
+    # `Model.objects.get(...)` crudo que lanza `Modelo.DoesNotExist` sin que la
+    # vista lo atrape (ObjectDoesNotExist es su clase base). DRF deja esto pasar
+    # como 500; lo volvemos 404.
     if isinstance(exc, ObjectDoesNotExist):
         logger.info('Registro inexistente no atrapado en %s %s: %s',
                     context['request'].method, context['request'].path, exc)
         return Response({'mensaje': 'No existe el registro solicitado', 'codigo': 15},
                         status=status.HTTP_404_NOT_FOUND)
 
-    # Dato invalido a nivel ORM que NO es la ValidationError de DRF: una fecha o
-    # numero mal formado dentro de un filtro (django ValidationError), o un
-    # nombre de campo inexistente en filter()/values() (FieldError). Sin manejar
-    # seria 500 opaco; lo volvemos 400. (La ValidationError de DRF y la de los
-    # serializers ya las maneja exception_handler mas abajo, con su detalle.)
+    # Dato invalido a nivel ORM que NO es la ValidationError de DRF: fecha/numero
+    # mal formado en un filtro, o campo inexistente en filter()/values(). DRF lo
+    # deja pasar como 500; lo volvemos 400.
     if isinstance(exc, (DjangoValidationError, FieldError)):
         logger.info('Solicitud con datos invalidos en %s %s: %s',
                     context['request'].method, context['request'].path, exc)
@@ -140,11 +130,8 @@ def custom_exception_handler(exc, context):
             'contenedor_objeto': [],
             'data': request.data
         }
-        # Excepcion NO manejada (DRF devolvio response=None -> Django respondera
-        # 500, que el movil muestra como "Servidor fuera de linea"). Antes el
-        # traceback se construia y se DESCARTABA, dejando el 500 sin rastro y
-        # sin forma de saber la causa. Lo logueamos con exc_info para que quede
-        # en los logs del servidor (stderr/gunicorn) y se pueda diagnosticar.
+        # DRF devolvio response=None -> Django respondera 500. Se loguea con
+        # exc_info para que quede en los logs del servidor y se pueda diagnosticar.
         logger.error(
             "Excepcion no manejada [%s] en %s %s (view=%s, usuario=%s): %s",
             exc.__class__.__name__,

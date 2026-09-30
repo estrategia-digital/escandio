@@ -163,7 +163,6 @@ class ExcelPlantilla:
         fila_encabezado = 6
         fila_datos = fila_encabezado + 1
 
-        # Encabezados de columna.
         fuente_enc = Font(name='Arial', size=10, bold=True, color='FFFFFF')
         relleno_enc = PatternFill('solid', fgColor=self.COLOR_ENCABEZADO)
         for idx, col in enumerate(columnas, start=1):
@@ -173,7 +172,6 @@ class ExcelPlantilla:
             celda.alignment = Alignment(horizontal='center', vertical='center')
             celda.border = self._borde
 
-        # Datos.
         fuente = Font(name='Arial', size=10)
         relleno_cebra = PatternFill('solid', fgColor=self.COLOR_CEBRA)
         for i, fila in enumerate(filas):
@@ -193,7 +191,6 @@ class ExcelPlantilla:
                 if cebra:
                     celda.fill = relleno_cebra
 
-        # Fila de totales.
         if totales and filas:
             r = fila_datos + len(filas)
             fuente_total = Font(name='Arial', size=10, bold=True)
@@ -244,7 +241,6 @@ class ExcelPlantilla:
             celda.alignment = Alignment(horizontal=alineacion, vertical='center', indent=1)
             ws.row_dimensions[i].height = 20 if i == 1 else 15
 
-        # Logo de Ruteo (la app) a la izquierda; logo del cliente a la derecha.
         ruteo = self._imagen_ruteo()
         if ruteo is not None:
             ws.add_image(ruteo, 'A1')

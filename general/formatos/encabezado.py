@@ -5,10 +5,8 @@ from reportlab.lib.utils import ImageReader
 
 from general.models.empresa import GenEmpresa
 
-# Cache en memoria del logo por URL. reportlab redibuja el encabezado en CADA
-# pagina, y antes cada dibujo re-descargaba el logo (lento y fragil). Se cachea
-# solo el exito; ante un fallo se reintenta la proxima vez, para que un blip de
-# red no deje el proceso entero sin logo.
+# Cache en memoria del logo por URL: reportlab redibuja el encabezado en CADA
+# pagina. Se cachea solo el exito; ante un fallo se reintenta la proxima vez.
 _LOGO_CACHE = {}
 
 AZUL = HexColor('#1F3B57')
@@ -48,14 +46,12 @@ class FormatoEncabezado():
             except Exception:
                 pass
 
-        # Barra de titulo corporativa.
         p.setFillColor(AZUL)
         p.rect(120, 756, 450, 19, stroke=0, fill=1)
         p.setFillColor(colors.white)
         p.setFont("Helvetica-Bold", 10)
         p.drawCentredString(345, 761, titulo)
 
-        # Bloque de empresa. Manejo seguro de None (empresa o sus campos).
         p.setFillColor(colors.black)
         nombre_corto = ((empresa.nombre_corto if empresa else '') or '').upper()
         nit = ((empresa.numero_identificacion if empresa else '') or '').upper()

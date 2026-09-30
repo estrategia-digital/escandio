@@ -161,10 +161,8 @@ def puede_ver(user, contenedor, modulo):
     if es_super_admin(user) or es_admin_del_contenedor(user, contenedor):
         return True
     permisos = _permisos_membresia(user, contenedor)
-    # Robusto ante JSON de permisos mal formado: si `permisos` no es dict o el
-    # valor del modulo es null/no-dict, se niega el acceso en vez de reventar.
-    # `permisos.get(modulo, {})` solo cubria la clave AUSENTE, no un modulo con
-    # valor null (ej. {'franja': null}) -> None.get('ver') era AttributeError (500).
+    # Un modulo con valor null (ej. {'franja': null}) -> None.get('ver') seria
+    # AttributeError (500); se niega el acceso en vez de reventar.
     if not isinstance(permisos, dict):
         return False
     modulo_perms = permisos.get(modulo)

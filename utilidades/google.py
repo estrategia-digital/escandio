@@ -25,11 +25,9 @@ class Google():
         try:
             response = requests.get(base_url, params=params, timeout=15)
         except Exception as e:
-            # timeout: sin el, un Google lento colgaba el worker (uvicorn) hasta
-            # cortar la conexion. try/except: una red caida (Timeout/Connection)
-            # no debe tumbar la peticion con un 500 opaco -> devolvemos el mismo
-            # dict de error que ya se maneja aguas arriba (la visita se crea sin
-            # geocodificar, igual que cuando Google responde status != OK).
+            # timeout evita que un Google lento cuelgue el worker; una red caida
+            # devuelve el mismo dict de error que un status != OK (la visita se
+            # crea sin geocodificar).
             return {"error": True, "mensaje": f"No se pudo consultar Google Maps: {e}"}
 
         if response.status_code == 200:
@@ -43,11 +41,8 @@ class Google():
                 location = resultados[0]['geometry']['location']
                 direccion_formato = resultados[0]['formatted_address']
                 # Google puede devolver formatted_address > 200 chars; direccion y
-                # direccion_formato son varchar(200) (aca en CtnDireccion y aguas
-                # abajo en la visita). Sin truncar -> DataError
-                # (StringDataRightTruncation) que tumba la importacion de
-                # complemento. Se trunca la variable para que viaje acotada tambien
-                # en el return. lat/lng/resultados (JSON completo) quedan intactos.
+                # direccion_formato son varchar(200), sin truncar tumba la
+                # importacion de complemento con un DataError.
                 direccion_formato = (direccion_formato or '')[:200]
                 direccion = CtnDireccion()
                 direccion.fecha = now()
@@ -123,14 +118,12 @@ class Google():
         
         visitas_ordenadas = sorted(visitas_limitadas, key=lambda x: x.get('orden', 0))
         
-        # 2. Preparar waypoints (excluyendo el último punto que será el destino)
         destino = visitas_ordenadas[-1]
         waypoints = [
-            f"{w['latitud']},{w['longitud']}" 
+            f"{w['latitud']},{w['longitud']}"
             for w in visitas_ordenadas[:-1]
         ]
-        
-        # 3. Llamar a la API de Directions
+
         params = {
             "origin": origen,
             "destination": f"{destino['latitud']},{destino['longitud']}",
@@ -139,9 +132,7 @@ class Google():
             "mode": "driving",
             "key": api_key,
         }
-    
 
-        # 5. Llamar a la API de Google Maps
         try:
             response = requests.get(
                 "https://maps.googleapis.com/maps/api/directions/json",
@@ -157,13 +148,11 @@ class Google():
                     "status": data['status']
                 }
 
-            # 4. Extraer la geometría detallada de cada tramo (leg)
             puntos_ruta = []
             puntos_por_tramo = []
             for leg in data['routes'][0]['legs']:
                 puntos_tramo = []
                 for step in leg['steps']:
-                    # Decodificar el polyline de cada segmento
                     puntos = self._decode_polyline(step['polyline']['points'])
                     puntos_ruta.extend(puntos)
                     puntos_tramo.extend(puntos)
@@ -236,10 +225,8 @@ class Google():
         index, lat, lng = 0, 0, 0
         coordinates = []
         changes = {'latitude': 0, 'longitude': 0}
-        
-        # Los caracteres ASCII se decodifican en valores decimal
+
         while index < len(polyline_str):
-            # Decodificar latitud
             shift, result = 0, 0
             while True:
                 byte = ord(polyline_str[index]) - 63
@@ -249,8 +236,7 @@ class Google():
                 if byte < 0x20:
                     break
             changes['latitude'] = ~(result >> 1) if (result & 1) else (result >> 1)
-            
-            # Decodificar longitud
+
             shift, result = 0, 0
             while True:
                 byte = ord(polyline_str[index]) - 63
