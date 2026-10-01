@@ -20,8 +20,9 @@ class ContenedorSerializador(serializers.ModelSerializer):
             'usuario_id': instance.usuario_id,
             'usuarios': instance.usuarios,
             'fecha': instance.fecha,
-            'acceso_restringido': acceso_restringido
-        } 
+            'acceso_restringido': acceso_restringido,
+            'acceso_seguimiento': instance.acceso_seguimiento,
+        }
     
 class ContenedorActualizarSerializador(serializers.HyperlinkedModelSerializer):    
     class Meta:
