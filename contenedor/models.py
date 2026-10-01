@@ -89,6 +89,7 @@ class Contenedor(TenantMixin):
     usuarios = models.IntegerField(default=1)
     acceso_whatsapp = models.BooleanField(default=False)
     acceso_whatsapp_notificaciones = models.BooleanField(default=False)
+    acceso_seguimiento = models.BooleanField(default=False)
     # Check-in periodico de seguimiento: cada cuantas horas el cron le pregunta
     # al conductor "¿como va el viaje?". null = desactivado (default).
     checkin_intervalo_horas = models.IntegerField(null=True, blank=True)

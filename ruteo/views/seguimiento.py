@@ -8,6 +8,7 @@ from ruteo.servicios.realtime import notificar_seguimiento
 from rest_framework.filters import OrderingFilter
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.exceptions import PermissionDenied
 from contenedor.mixins import RolMixin
 
 
@@ -20,6 +21,12 @@ class RutSeguimientoViewSet(RolMixin, viewsets.ModelViewSet):
     serializadores = {
         'trafico' : RutSeguimientoSerializador
     }
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        tenant = getattr(request, 'tenant', None)
+        if tenant is not None and not getattr(tenant, 'acceso_seguimiento', False):
+            raise PermissionDenied('Conductores en ruta no esta habilitado para este contenedor')
 
     def get_serializer_class(self):
         serializador_parametro = self.request.query_params.get('serializador', None)
