@@ -72,9 +72,17 @@ class SolicitarClaveSerializer(serializers.Serializer):
 
 
 class ActualizarPerfilMovilSerializer(serializers.Serializer):
-    """Edicion de perfil desde la app movil. Por ahora solo el nombre.
+    """Edicion de perfil desde la app movil: nombre (requerido) + apellido,
+    telefono y documento (opcionales). Solo se actualizan los campos enviados;
+    un string vacio limpia el campo (queda null).
 
-    CharField recorta espacios (trim_whitespace) y rechaza vacio
-    (allow_blank=False por defecto). max_length=80 se valida tras el trim.
+    CharField recorta espacios (trim_whitespace); nombre rechaza vacio
+    (allow_blank=False por defecto), los opcionales lo permiten.
     """
     nombre = serializers.CharField(max_length=80, trim_whitespace=True)
+    apellido = serializers.CharField(
+        max_length=255, trim_whitespace=True, required=False, allow_blank=True)
+    telefono = serializers.CharField(
+        max_length=50, trim_whitespace=True, required=False, allow_blank=True)
+    numero_identificacion = serializers.CharField(
+        max_length=20, trim_whitespace=True, required=False, allow_blank=True)
