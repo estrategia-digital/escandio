@@ -50,9 +50,14 @@ def _apns_push(token, titulo, cuerpo, data):
     from aioapns import APNs, NotificationRequest, PushType
     from asgiref.sync import async_to_sync
 
+    # aioapns pasa `key` directo a PyJWT como el contenido PEM (solo lee archivo
+    # para cert_file). Por eso hay que pasar el CONTENIDO del .p8, no la ruta.
+    with open(settings.APNS_KEY_PATH) as _f:
+        apns_key = _f.read()
+
     async def _send():
         apns = APNs(
-            key=settings.APNS_KEY_PATH,
+            key=apns_key,
             key_id=settings.APNS_KEY_ID,
             team_id=settings.APNS_TEAM_ID,
             topic=settings.APNS_TOPIC,
