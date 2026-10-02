@@ -80,6 +80,7 @@ class RegistroView(MovilApiMixin, APIView):
             nombre=entrada.validated_data.get('nombre') or None,
             telefono=entrada.validated_data.get('telefono') or None,
             empresa_nombre=entrada.validated_data.get('empresa_nombre') or None,
+            numero_identificacion=entrada.validated_data.get('numero_identificacion') or None,
         )
         if errores is not None:
             return responses.error(

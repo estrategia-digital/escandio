@@ -60,6 +60,11 @@ class RegistroSerializer(serializers.Serializer):
     )
     nombre = serializers.CharField(required=False, allow_blank=True, max_length=255)
     telefono = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    # Documento de identidad: ayuda al super-admin a verificar al conductor
+    # antes de aprobar el auto-registro.
+    numero_identificacion = serializers.CharField(
+        required=False, allow_blank=True, max_length=20,
+    )
     # Texto libre: empresa para la que trabaja el conductor. Ayuda al
     # super-admin a saber a que contenedor asignarlo al aprobarlo.
     empresa_nombre = serializers.CharField(

@@ -34,7 +34,8 @@ def _enviar_correo(usuario, asunto, html):
         return False
 
 
-def crear_usuario(username, password, nombre=None, telefono=None, empresa_nombre=None):
+def crear_usuario(username, password, nombre=None, telefono=None,
+                  empresa_nombre=None, numero_identificacion=None):
     """Crea el usuario (pendiente de aprobacion) y dispara el correo de verificacion.
 
     Devuelve (usuario, errores). Si errores no es None no se creo nada.
@@ -53,7 +54,12 @@ def crear_usuario(username, password, nombre=None, telefono=None, empresa_nombre
         usuario.telefono = telefono
     if empresa_nombre:
         usuario.empresa_nombre = empresa_nombre
-    usuario.save(update_fields=['estado_registro', 'nombre', 'telefono', 'empresa_nombre'])
+    if numero_identificacion:
+        usuario.numero_identificacion = numero_identificacion
+    usuario.save(update_fields=[
+        'estado_registro', 'nombre', 'telefono', 'empresa_nombre',
+        'numero_identificacion',
+    ])
 
     token = secrets.token_urlsafe(20)
     verificacion = CtnVerificacionSerializador(data={

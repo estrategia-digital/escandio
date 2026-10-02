@@ -1230,6 +1230,9 @@ components:
         telefono:
           type: string
           maxLength: 50
+        numero_identificacion:
+          type: string
+          maxLength: 20
         empresa_nombre:
           type: string
           maxLength: 255
