@@ -137,7 +137,8 @@ class MeView(MovilApiMixin, APIView):
         tags=['auth'],
     )
     def patch(self, request):
-        """Actualiza el perfil del usuario autenticado (por ahora solo el nombre).
+        """Actualiza el perfil del usuario autenticado: nombre (requerido) +
+        apellido, telefono y documento (opcionales, solo los enviados).
 
         Solo el dueno del token se modifica a si mismo: se opera sobre
         request.user, no hay id en la ruta. Devuelve el MISMO shape que GET me/.
@@ -150,8 +151,15 @@ class MeView(MovilApiMixin, APIView):
                 extra={'validaciones': entrada.errors},
             )
         usuario = request.user
-        usuario.nombre = entrada.validated_data['nombre']
-        usuario.save(update_fields=['nombre'])
+        datos = entrada.validated_data
+        usuario.nombre = datos['nombre']
+        campos = ['nombre']
+        for campo in ('apellido', 'telefono', 'numero_identificacion'):
+            if campo in datos:
+                # String vacio limpia el campo (los modelos son null=True).
+                setattr(usuario, campo, datos[campo] or None)
+                campos.append(campo)
+        usuario.save(update_fields=campos)
         return Response(UsuarioMovilSerializer(usuario).data)
 
 

@@ -121,7 +121,8 @@ paths:
     patch:
       operationId: auth_me_partial_update
       description: |-
-        Actualiza el perfil del usuario autenticado (por ahora solo el nombre).
+        Actualiza el perfil del usuario autenticado: nombre (requerido) +
+        apellido, telefono y documento (opcionales, solo los enviados).
 
         Solo el dueno del token se modifica a si mismo: se opera sobre
         request.user, no hay id en la ruta. Devuelve el MISMO shape que GET me/.
@@ -1192,15 +1193,26 @@ components:
     PatchedActualizarPerfilMovilRequest:
       type: object
       description: |-
-        Edicion de perfil desde la app movil. Por ahora solo el nombre.
+        Edicion de perfil desde la app movil: nombre (requerido) + apellido,
+        telefono y documento (opcionales). Solo se actualizan los campos enviados;
+        un string vacio limpia el campo (queda null).
 
-        CharField recorta espacios (trim_whitespace) y rechaza vacio
-        (allow_blank=False por defecto). max_length=80 se valida tras el trim.
+        CharField recorta espacios (trim_whitespace); nombre rechaza vacio
+        (allow_blank=False por defecto), los opcionales lo permiten.
       properties:
         nombre:
           type: string
           minLength: 1
           maxLength: 80
+        apellido:
+          type: string
+          maxLength: 255
+        telefono:
+          type: string
+          maxLength: 50
+        numero_identificacion:
+          type: string
+          maxLength: 20
     RegistroRequest:
       type: object
       properties:
