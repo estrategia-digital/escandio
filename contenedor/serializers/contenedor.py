@@ -22,6 +22,8 @@ class ContenedorSerializador(serializers.ModelSerializer):
             'fecha': instance.fecha,
             'acceso_restringido': acceso_restringido,
             'acceso_seguimiento': instance.acceso_seguimiento,
+            'acceso_whatsapp': instance.acceso_whatsapp,
+            'acceso_whatsapp_notificaciones': instance.acceso_whatsapp_notificaciones,
         }
     
 class ContenedorActualizarSerializador(serializers.HyperlinkedModelSerializer):    
