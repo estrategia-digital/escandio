@@ -25,6 +25,7 @@ class RutTerminacion(models.Model):
     total_guias = models.IntegerField(default=0)
     entregadas = models.IntegerField(default=0)
     con_novedad = models.IntegerField(default=0)
+    re_despachadas = models.IntegerField(default=0)
     porcentaje = models.DecimalField(max_digits=5, decimal_places=1, default=0)
 
     class Meta:
