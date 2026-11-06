@@ -223,7 +223,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
             despacho = RutDespacho.objects.get(pk=id)
         except RutDespacho.DoesNotExist:
             return Response({'mensaje':'El despacho no existe', 'codigo':15}, status=status.HTTP_400_BAD_REQUEST)
-        ok, mensaje = DespachoServicio.validar_terminacion(despacho)
+        ok, mensaje = DespachoServicio.validar_terminacion(despacho, permitir_redespacho=True)
         if not ok:
             return Response({'mensaje': mensaje, 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
         return Response(DespachoServicio.consolidado_viaje(despacho), status=status.HTTP_200_OK)
@@ -238,12 +238,15 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                 # Lock de fila: serializa dos "terminar" concurrentes; el segundo
                 # espera el commit del primero y validar_terminacion lo rechaza.
                 despacho = RutDespacho.objects.select_for_update().get(pk=id)
-                ok, mensaje = DespachoServicio.validar_terminacion(despacho)
+                ok, mensaje = DespachoServicio.validar_terminacion(despacho, permitir_redespacho=True)
                 if not ok:
                     return Response({'mensaje': mensaje, 'codigo': 1}, status=status.HTTP_400_BAD_REQUEST)
                 # Foto real del viaje ANTES de cerrar (los conteos cuentan visitas
                 # reales, no dependen del flag de terminado).
                 consolidado = DespachoServicio.consolidado_viaje(despacho)
+                RutVisita.objects.filter(
+                    despacho_id=despacho.id, estado_entregado=False, estado_novedad=False
+                ).update(despacho_anterior_id=despacho.id, estado_despacho=False, despacho=None)
                 despacho.estado_terminado = True
                 despacho.save()
                 if despacho.vehiculo_id:
@@ -260,6 +263,7 @@ class RutDespachoViewSet(RolMixin, viewsets.ModelViewSet):
                     despacho_id=despacho.id,
                     schema_name=request.tenant.schema_name,
                 ).update(estado_terminado=True)
+                DespachoServicio.recalcular_contadores([despacho.id])
                 registrar_evento(despacho.id, RutDespachoEvento.TIPO_TERMINADO, getattr(request.user, 'id', None))
                 return Response({'mensaje': 'Se termino el despacho'}, status=status.HTTP_200_OK)
         except RutDespacho.DoesNotExist:

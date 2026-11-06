@@ -13,16 +13,22 @@ class DespachoServicio():
     # Terminacion de viaje (Documento de Terminacion)
     # ------------------------------------------------------------------
     @staticmethod
-    def validar_terminacion(despacho):
+    def validar_terminacion(despacho, permitir_redespacho=False):
         """Reglas para poder terminar un viaje -> (ok, mensaje).
 
         Extraida de la vista terminar para que el preview y el cierre usen la
         MISMA validacion y no puedan divergir. Preserva los mensajes originales.
+
+        Con permitir_redespacho=True las visitas sin entregar ni novedad no
+        bloquean: el cierre del admin las devuelve al pool (RE-DESPACHO). El
+        finalizar del conductor no lo usa, asi conserva su regla de 0 pendientes.
         """
         if despacho.estado_aprobado != True:
             return False, 'El despacho no esta aprobado'
         if despacho.estado_terminado != False:
             return False, 'El despacho ya esta terminado'
+        if permitir_redespacho:
+            return True, ''
         pendientes = list(
             RutVisita.objects.filter(
                 despacho_id=despacho.id, estado_entregado=False, estado_novedad=False
@@ -53,6 +59,8 @@ class DespachoServicio():
         entregadas = visitas.filter(estado_entregado=True).count()
         con_novedad_qs = visitas.filter(estado_novedad=True, estado_entregado=False)
         con_novedad = con_novedad_qs.count()
+        re_despacho_qs = visitas.filter(estado_entregado=False, estado_novedad=False)
+        re_despachadas = re_despacho_qs.count()
         porcentaje = round(entregadas / total * 100, 1) if total else 0
 
         # Detalle: la novedad mas reciente por visita, en UNA sola consulta (sin N+1).
@@ -96,8 +104,12 @@ class DespachoServicio():
             'total_guias': total,
             'entregadas': entregadas,
             'con_novedad': con_novedad,
+            're_despachadas': re_despachadas,
             'porcentaje': porcentaje,
             'detalle_novedades': detalle,
+            'detalle_redespacho': list(
+                re_despacho_qs.values('numero', 'destinatario').order_by('orden', 'id')
+            ),
         }
 
     @staticmethod
@@ -116,6 +128,7 @@ class DespachoServicio():
             total_guias=consolidado['total_guias'],
             entregadas=consolidado['entregadas'],
             con_novedad=consolidado['con_novedad'],
+            re_despachadas=consolidado.get('re_despachadas', 0),
             porcentaje=consolidado['porcentaje'],
         )
         detalles = [

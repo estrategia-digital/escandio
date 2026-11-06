@@ -96,6 +96,12 @@ class ValidarTerminacionTests(_Base):
         ok, msg = DespachoServicio.validar_terminacion(self.despacho)
         self.assertTrue(ok)
 
+    def test_permitir_redespacho_no_bloquea_pendientes(self):
+        self._visita(numero=7, destinatario='Ana')  # sin entregar ni novedad
+        ok, msg = DespachoServicio.validar_terminacion(self.despacho, permitir_redespacho=True)
+        self.assertTrue(ok)
+        self.assertEqual(msg, '')
+
 
 class ConsolidadoTests(_Base):
 
@@ -148,11 +154,15 @@ class PreviewTests(_Base):
         self.assertFalse(self.despacho.estado_terminado)          # NO cerro
         self.assertFalse(RutTerminacion.objects.exists())         # NO creo snapshot
 
-    def test_preview_bloqueado_devuelve_mismo_mensaje(self):
-        self._visita(numero=9, destinatario='Luz')  # pendiente
+    def test_preview_muestra_redespacho_sin_bloquear(self):
+        self._visita(entregado=True)
+        self._visita(numero=9, destinatario='Luz')  # sin entregar ni novedad -> re-despacho
         respuesta = RutDespachoViewSet().terminar_preview(_Req({'id': self.despacho.id}))
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn('sin entregar ni novedad', respuesta.data['mensaje'])
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data['re_despachadas'], 1)
+        self.assertEqual(respuesta.data['detalle_redespacho'][0]['numero'], 9)
+        self.despacho.refresh_from_db()
+        self.assertFalse(self.despacho.estado_terminado)          # NO cerro
 
 
 class TerminarTests(_Base):
@@ -187,6 +197,28 @@ class TerminarTests(_Base):
         RutVisita.objects.filter(despacho=self.despacho).update(estado_entregado=True)
         term.refresh_from_db()
         self.assertEqual((term.entregadas, term.con_novedad), (0, 1))  # congelado
+
+    def test_terminar_redespacha_pendientes_al_pool(self):
+        entregada = self._visita(entregado=True, numero=1)
+        pendiente = self._visita(numero=2, destinatario='Luz')  # sin entregar ni novedad
+
+        respuesta = RutDespachoViewSet().terminar(_Req({'id': self.despacho.id}, user_id=7))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.despacho.refresh_from_db()
+        self.assertTrue(self.despacho.estado_terminado)
+
+        pendiente.refresh_from_db()
+        self.assertIsNone(pendiente.despacho_id)                      # salio del despacho
+        self.assertFalse(pendiente.estado_despacho)                  # vuelve al pool
+        self.assertEqual(pendiente.despacho_anterior_id, self.despacho.id)
+
+        entregada.refresh_from_db()
+        self.assertEqual(entregada.despacho_id, self.despacho.id)    # la entregada se queda
+
+        term = RutTerminacion.objects.get(despacho=self.despacho)
+        self.assertEqual(term.re_despachadas, 1)
+        self.assertEqual((term.total_guias, term.entregadas, term.con_novedad), (2, 1, 0))
 
     def test_reterminar_no_duplica_snapshot(self):
         self._visita(entregado=True)
