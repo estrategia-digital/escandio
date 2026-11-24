@@ -1,18 +1,18 @@
 """Integracion Satrack: cliente (auth + last) y servicio de refresco.
 
-Sin credenciales reales: requests.post esta mockeado. Cubre cache de token,
-reintento 401, error 400, parseo y actualizacion de RutVehiculo.
+Credenciales desde el entorno (SATRACK_*), requests.post mockeado. Cubre cache
+de token en memoria, reintento 401, error 400, parseo y actualizacion de
+RutVehiculo, y el caso sin configurar.
 
 Correr: python manage.py test ruteo.tests_satrack
 """
-from datetime import timedelta
+import os
 from unittest.mock import patch
 
-from django.utils import timezone
 from django_tenants.test.cases import TenantTestCase
 
-from contenedor.models import CtnSatrackConexion
-from mensajeria.servicios.cifrado import CifradoServicio
+import ruteo.servicios.satrack as servicio_mod
+import utilidades.satrack as cliente_mod
 from ruteo.models.despacho import RutDespacho
 from ruteo.models.vehiculo import RutVehiculo
 from ruteo.servicios.satrack import SatrackUbicacionServicio
@@ -37,19 +37,25 @@ def respuesta_last(eventos):
 
 
 class SatrackTestsBase(TenantTestCase):
-    def _conexion(self, con_token=False):
-        datos = {
-            'contenedor': self.tenant,
-            'client_id': 'cliente-1',
-            'client_secret_cifrado': CifradoServicio.cifrar('secreto'),
-            'grant_type': 'client_credentials',
-        }
-        if con_token:
-            datos['access_token_cifrado'] = CifradoServicio.cifrar('TOK')
-            datos['token_expira'] = timezone.now() + timedelta(hours=2)
-        return CtnSatrackConexion.objects.create(**datos)
+    def setUp(self):
+        super().setUp()
+        os.environ['SATRACK_CLIENT_ID'] = 'cliente-1'
+        os.environ['SATRACK_CLIENT_SECRET'] = 'secreto'
+        os.environ['SATRACK_GRANT_TYPE'] = 'client_credentials'
+        cliente_mod._TOKEN = {'valor': None, 'expira': None}
+        servicio_mod._ULTIMA_CONSULTA = {}
 
-    def _despacho_dispatcher(self, respuestas_por_url):
+    def tearDown(self):
+        for clave in ('SATRACK_CLIENT_ID', 'SATRACK_CLIENT_SECRET', 'SATRACK_GRANT_TYPE'):
+            os.environ.pop(clave, None)
+        super().tearDown()
+
+    def _token_vigente(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        cliente_mod._TOKEN = {'valor': 'TOK', 'expira': timezone.now() + timedelta(hours=2)}
+
+    def _dispatcher(self, respuestas_por_url):
         def dispatcher(url, *args, **kwargs):
             for fragmento, respuesta in respuestas_por_url.items():
                 if fragmento in url:
@@ -62,49 +68,47 @@ class SatrackTestsBase(TenantTestCase):
 
 class SatrackClienteTests(SatrackTestsBase):
     @patch('utilidades.satrack.requests.post')
-    def test_autenticar_cachea_token_cifrado(self, mock_post):
-        mock_post.side_effect = self._despacho_dispatcher({'Keycloak': respuesta_auth()})
-        conexion = self._conexion()
+    def test_autenticar_cachea_token_en_memoria(self, mock_post):
+        mock_post.side_effect = self._dispatcher({'Keycloak': respuesta_auth()})
 
-        resultado = SatrackCliente(conexion).autenticar()
+        resultado = SatrackCliente().autenticar()
 
         self.assertFalse(resultado['error'])
-        conexion.refresh_from_db()
-        self.assertEqual(CifradoServicio.descifrar(conexion.access_token_cifrado), 'TOK')
-        self.assertIsNotNone(conexion.token_expira)
+        self.assertEqual(cliente_mod._TOKEN['valor'], 'TOK')
+        self.assertIsNotNone(cliente_mod._TOKEN['expira'])
         self.assertEqual(mock_post.call_count, 1)
 
     @patch('utilidades.satrack.requests.post')
     def test_token_vigente_no_reautentica(self, mock_post):
-        mock_post.side_effect = self._despacho_dispatcher({'location': respuesta_last([])})
-        conexion = self._conexion(con_token=True)
+        mock_post.side_effect = self._dispatcher({'location': respuesta_last([])})
+        self._token_vigente()
 
-        SatrackCliente(conexion).ultima_ubicacion(['ABC123'])
+        SatrackCliente().ultima_ubicacion(['ABC123'])
 
         urls = [llamada.args[0] for llamada in mock_post.call_args_list]
-        self.assertTrue(all('location' in url for url in urls))
         self.assertEqual(len(urls), 1)
+        self.assertTrue(all('location' in url for url in urls))
 
     @patch('utilidades.satrack.requests.post')
     def test_ultima_ubicacion_parsea_eventos(self, mock_post):
         evento = {'serviceCode': 'ABC123', 'latitude': 4.65, 'longitude': -74.1}
-        mock_post.side_effect = self._despacho_dispatcher({'location': respuesta_last([evento])})
-        conexion = self._conexion(con_token=True)
+        mock_post.side_effect = self._dispatcher({'location': respuesta_last([evento])})
+        self._token_vigente()
 
-        resultado = SatrackCliente(conexion).ultima_ubicacion(['ABC123'])
+        resultado = SatrackCliente().ultima_ubicacion(['ABC123'])
 
         self.assertFalse(resultado['error'])
         self.assertEqual(resultado['eventos'][0]['serviceCode'], 'ABC123')
 
     @patch('utilidades.satrack.requests.post')
     def test_401_reautentica_y_reintenta(self, mock_post):
-        mock_post.side_effect = self._despacho_dispatcher({
+        mock_post.side_effect = self._dispatcher({
             'Keycloak': respuesta_auth(),
             'location': [RespuestaFalsa(401, {}), respuesta_last([{'serviceCode': 'ABC123', 'latitude': 1, 'longitude': 2}])],
         })
-        conexion = self._conexion(con_token=True)
+        self._token_vigente()
 
-        resultado = SatrackCliente(conexion).ultima_ubicacion(['ABC123'])
+        resultado = SatrackCliente().ultima_ubicacion(['ABC123'])
 
         self.assertFalse(resultado['error'])
         urls = [llamada.args[0] for llamada in mock_post.call_args_list]
@@ -112,13 +116,18 @@ class SatrackClienteTests(SatrackTestsBase):
 
     @patch('utilidades.satrack.requests.post')
     def test_400_placa_no_pertenece(self, mock_post):
-        mock_post.side_effect = self._despacho_dispatcher({'location': RespuestaFalsa(400, {})})
-        conexion = self._conexion(con_token=True)
+        mock_post.side_effect = self._dispatcher({'location': RespuestaFalsa(400, {})})
+        self._token_vigente()
 
-        resultado = SatrackCliente(conexion).ultima_ubicacion(['XXX999'])
+        resultado = SatrackCliente().ultima_ubicacion(['XXX999'])
 
         self.assertTrue(resultado['error'])
         self.assertIn('no pertenece', resultado['mensaje'])
+
+    def test_sin_credenciales_no_configurado(self):
+        for clave in ('SATRACK_CLIENT_ID', 'SATRACK_CLIENT_SECRET'):
+            os.environ.pop(clave, None)
+        self.assertFalse(SatrackCliente.configurado())
 
 
 class SatrackServicioTests(SatrackTestsBase):
@@ -130,8 +139,8 @@ class SatrackServicioTests(SatrackTestsBase):
     @patch('utilidades.satrack.requests.post')
     def test_refrescar_actualiza_vehiculo(self, mock_post):
         evento = {'serviceCode': 'ABC123', 'latitude': 4.711, 'longitude': -74.072, 'speed': 30}
-        mock_post.side_effect = self._despacho_dispatcher({'location': respuesta_last([evento])})
-        self._conexion(con_token=True)
+        mock_post.side_effect = self._dispatcher({'location': respuesta_last([evento])})
+        self._token_vigente()
         vehiculo = self._vehiculo_en_ruta()
 
         resultado = SatrackUbicacionServicio.refrescar()
@@ -143,22 +152,10 @@ class SatrackServicioTests(SatrackTestsBase):
         self.assertEqual(float(vehiculo.longitud), -74.072)
 
     @patch('utilidades.satrack.requests.post')
-    def test_refrescar_marca_conexion_activa(self, mock_post):
-        mock_post.side_effect = self._despacho_dispatcher({'location': respuesta_last([])})
-        self._conexion(con_token=True)
-        self._vehiculo_en_ruta()
-
-        SatrackUbicacionServicio.refrescar()
-
-        conexion = SatrackUbicacionServicio.conexion_actual()
-        self.assertEqual(conexion.estado, CtnSatrackConexion.ESTADO_ACTIVO)
-        self.assertIsNotNone(conexion.fecha_ultima_consulta)
-
-    @patch('utilidades.satrack.requests.post')
     def test_ttl_evita_consulta_repetida(self, mock_post):
-        conexion = self._conexion(con_token=True)
-        conexion.fecha_ultima_consulta = timezone.now()
-        conexion.save(update_fields=['fecha_ultima_consulta'])
+        from django.db import connection
+        from django.utils import timezone
+        servicio_mod._ULTIMA_CONSULTA = {connection.schema_name: timezone.now()}
         self._vehiculo_en_ruta()
 
         resultado = SatrackUbicacionServicio.refrescar()
@@ -167,7 +164,8 @@ class SatrackServicioTests(SatrackTestsBase):
         mock_post.assert_not_called()
 
     @patch('utilidades.satrack.requests.post')
-    def test_sin_conexion_devuelve_error(self, mock_post):
+    def test_sin_configurar_devuelve_error(self, mock_post):
+        os.environ.pop('SATRACK_CLIENT_SECRET', None)
         self._vehiculo_en_ruta()
 
         resultado = SatrackUbicacionServicio.refrescar()
@@ -177,7 +175,7 @@ class SatrackServicioTests(SatrackTestsBase):
 
     @patch('utilidades.satrack.requests.post')
     def test_sin_vehiculos_no_consulta(self, mock_post):
-        self._conexion(con_token=True)
+        self._token_vigente()
 
         resultado = SatrackUbicacionServicio.refrescar()
 

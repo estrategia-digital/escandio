@@ -191,41 +191,6 @@ class CtnVerificacion(models.Model):
         db_table = "ctn_verificacion"
 
 
-class CtnSatrackConexion(models.Model):
-    """Credenciales de la API de eventos de ubicacion de Satrack por contenedor.
-
-    serviceCode en Satrack = RutVehiculo.placa. El client_secret se guarda
-    cifrado (CifradoServicio, Fernet). El access_token de Keycloak dura ~2h y se
-    cachea cifrado junto con token_expira para no re-autenticar en cada consulta.
-    """
-    ESTADO_PENDIENTE = 'pendiente'
-    ESTADO_ACTIVO = 'activo'
-    ESTADO_ERROR = 'error'
-    ESTADO_CHOICES = [
-        (ESTADO_PENDIENTE, 'Pendiente'),
-        (ESTADO_ACTIVO, 'Activo'),
-        (ESTADO_ERROR, 'Error'),
-    ]
-
-    contenedor = models.OneToOneField(Contenedor, on_delete=models.CASCADE, related_name='satrack_conexion')
-    client_id = models.CharField(max_length=255)
-    client_secret_cifrado = models.TextField()
-    grant_type = models.CharField(max_length=50, default='client_credentials')
-    access_token_cifrado = models.TextField(null=True)
-    token_expira = models.DateTimeField(null=True)
-    fecha_ultima_consulta = models.DateTimeField(null=True)
-    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default=ESTADO_PENDIENTE)
-    error_mensaje = models.TextField(null=True, blank=True)
-    fecha_conexion = models.DateTimeField(auto_now_add=True)
-    fecha_actualizacion = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "ctn_satrack_conexion"
-
-    def __str__(self):
-        return f'{self.contenedor.schema_name} -> satrack {self.client_id}'
-
-
 class CtnWhatsappConexion(models.Model):
     ESTADO_PENDIENTE = 'pendiente'
     ESTADO_ACTIVO = 'activo'
