@@ -9,6 +9,7 @@ from .views.novedad_tipo import RutNovedadTipoViewSet
 from .views.novedad import RutNovedadViewSet
 from .views.seguimiento import RutSeguimientoViewSet
 from .views.alerta import RutAlertaViewSet
+from .views.satrack import SatrackConexionViewSet, SatrackUbicacionViewSet
 from .views.reporte import ReporteMensajeroView, ReporteMensajeroEntregasView
 from rest_framework import routers
 
@@ -23,6 +24,8 @@ router.register(r'novedad', RutNovedadViewSet)
 router.register(r'novedad_tipo', RutNovedadTipoViewSet)
 router.register(r'seguimiento', RutSeguimientoViewSet)
 router.register(r'alerta', RutAlertaViewSet)
+router.register(r'satrack/conexion', SatrackConexionViewSet, basename='satrack-conexion')
+router.register(r'satrack/ubicacion', SatrackUbicacionViewSet, basename='satrack-ubicacion')
 
 urlpatterns = [
     path('reporte/mensajero/', ReporteMensajeroView.as_view(), name='reporte-mensajero'),
