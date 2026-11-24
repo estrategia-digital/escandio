@@ -24,6 +24,7 @@ class ContenedorSerializador(serializers.ModelSerializer):
             'acceso_seguimiento': instance.acceso_seguimiento,
             'acceso_whatsapp': instance.acceso_whatsapp,
             'acceso_whatsapp_notificaciones': instance.acceso_whatsapp_notificaciones,
+            'acceso_satrack': instance.acceso_satrack,
         }
     
 class ContenedorActualizarSerializador(serializers.HyperlinkedModelSerializer):    

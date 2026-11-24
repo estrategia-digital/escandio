@@ -3,6 +3,7 @@ import logging
 from django.db import connection
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from contenedor.mixins import RolMixin
@@ -15,7 +16,15 @@ from utilidades.satrack import SatrackCliente
 logger = logging.getLogger(__name__)
 
 
-class SatrackConexionViewSet(RolMixin, viewsets.ModelViewSet):
+class SatrackHabilitadoMixin:
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        tenant = getattr(request, 'tenant', None)
+        if tenant is not None and not getattr(tenant, 'acceso_satrack', False):
+            raise PermissionDenied('Satrack no esta habilitado para este contenedor')
+
+
+class SatrackConexionViewSet(SatrackHabilitadoMixin, RolMixin, viewsets.ModelViewSet):
     """Credenciales Satrack del contenedor actual. Solo admin del contenedor."""
 
     acciones_admin = ['list', 'retrieve', 'create', 'update', 'partial_update', 'destroy', 'probar']
@@ -89,7 +98,7 @@ class SatrackConexionViewSet(RolMixin, viewsets.ModelViewSet):
         return Response({'ok': True})
 
 
-class SatrackUbicacionViewSet(RolMixin, viewsets.ViewSet):
+class SatrackUbicacionViewSet(SatrackHabilitadoMixin, RolMixin, viewsets.ViewSet):
     """Ubicacion en vivo de los vehiculos en ruta segun Satrack."""
 
     modulo = 'despacho'
