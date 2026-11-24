@@ -3,18 +3,20 @@ import logging
 from datetime import timedelta
 
 import requests
+from decouple import config
 from django.utils import timezone
 
-from mensajeria.servicios.cifrado import CifradoServicio
-
 logger = logging.getLogger(__name__)
+
+_TOKEN = {'valor': None, 'expira': None}
 
 
 class SatrackCliente:
     """Consume la API de eventos de ubicacion de Satrack (Keycloak + GraphQL).
 
-    Recibe una CtnSatrackConexion (client_secret cifrado) y expone la consulta
-    de ultima ubicacion por placa. El token se cachea cifrado en la conexion.
+    Las credenciales (una sola cuenta de integracion) salen del entorno:
+    SATRACK_CLIENT_ID, SATRACK_CLIENT_SECRET, SATRACK_GRANT_TYPE. El token de
+    Keycloak dura ~2h y se cachea en memoria por proceso.
     """
 
     URL_AUTENTICACION = 'https://externalsecurityapi.satrack.com/api/v1/Keycloak/authenticate'
@@ -27,27 +29,39 @@ class SatrackCliente:
         'locationStatus batteryLevel samePlaceMinutes'
     )
 
-    def __init__(self, conexion):
-        self.conexion = conexion
+    @staticmethod
+    def _client_id():
+        return config('SATRACK_CLIENT_ID', default='')
+
+    @staticmethod
+    def _client_secret():
+        return config('SATRACK_CLIENT_SECRET', default='')
+
+    @staticmethod
+    def _grant_type():
+        return config('SATRACK_GRANT_TYPE', default='client_credentials')
+
+    @classmethod
+    def configurado(cls):
+        return bool(cls._client_id() and cls._client_secret())
 
     def _token_vigente(self):
-        if not self.conexion.access_token_cifrado or not self.conexion.token_expira:
+        if not _TOKEN['valor'] or not _TOKEN['expira']:
             return None
-        limite = timezone.now() + timedelta(seconds=self.MARGEN_EXPIRACION_SEGUNDOS)
-        if self.conexion.token_expira <= limite:
+        if _TOKEN['expira'] <= timezone.now() + timedelta(seconds=self.MARGEN_EXPIRACION_SEGUNDOS):
             return None
-        return CifradoServicio.descifrar(self.conexion.access_token_cifrado)
+        return _TOKEN['valor']
 
     def autenticar(self):
         datos = {
-            'client_id': self.conexion.client_id,
-            'client_secret': CifradoServicio.descifrar(self.conexion.client_secret_cifrado),
-            'grant_type': self.conexion.grant_type,
+            'client_id': self._client_id(),
+            'client_secret': self._client_secret(),
+            'grant_type': self._grant_type(),
         }
         try:
             respuesta = requests.post(self.URL_AUTENTICACION, data=datos, timeout=self.TIMEOUT_SEGUNDOS)
         except requests.RequestException as e:
-            logger.error('Satrack autenticar: no se pudo contactar Keycloak conexion=%s: %s', self.conexion.id, e)
+            logger.error('Satrack autenticar: no se pudo contactar Keycloak: %s', e)
             return {'error': True, 'mensaje': f'No se pudo contactar el servicio de autenticación de Satrack: {e}'}
 
         if respuesta.status_code != 200:
@@ -63,9 +77,8 @@ class SatrackCliente:
             return {'error': True, 'mensaje': 'Satrack no devolvió access_token'}
 
         expira_en = cuerpo.get('expires_in') or 0
-        self.conexion.access_token_cifrado = CifradoServicio.cifrar(token)
-        self.conexion.token_expira = timezone.now() + timedelta(seconds=int(expira_en))
-        self.conexion.save(update_fields=['access_token_cifrado', 'token_expira', 'fecha_actualizacion'])
+        _TOKEN['valor'] = token
+        _TOKEN['expira'] = timezone.now() + timedelta(seconds=int(expira_en))
         return {'error': False, 'token': token}
 
     def _token(self, forzar=False):
@@ -94,7 +107,7 @@ class SatrackCliente:
                 self.URL_UBICACION, json={'query': query}, headers=headers, timeout=self.TIMEOUT_SEGUNDOS,
             )
         except requests.RequestException as e:
-            logger.error('Satrack consulta: no se pudo contactar la API conexion=%s: %s', self.conexion.id, e)
+            logger.error('Satrack consulta: no se pudo contactar la API: %s', e)
             return {'error': True, 'mensaje': f'No se pudo contactar la API de ubicación de Satrack: {e}'}
 
         if respuesta.status_code == 401:
@@ -106,7 +119,7 @@ class SatrackCliente:
             return {'error': True, 'mensaje': 'El token de Satrack no es válido o ya expiró'}
 
         if respuesta.status_code == 400:
-            return {'error': True, 'mensaje': 'Alguna placa consultada no pertenece a la cuenta Satrack del contenedor'}
+            return {'error': True, 'mensaje': 'Alguna placa consultada no pertenece a la cuenta Satrack'}
 
         if respuesta.status_code != 200:
             return {'error': True, 'mensaje': f'Satrack respondió HTTP {respuesta.status_code}'}
